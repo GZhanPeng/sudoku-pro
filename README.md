@@ -17,6 +17,7 @@
 - 全标所有合法候选数
 - 合法候选与人工排除分开保存，不会重新加入手动删掉的候选
 - 候选模式下逐个添加或排除候选
+- 非给定格允许试填任意 1–9，不会偷看最终答案拦截输入；行、列、宫重复时只标红提醒
 - 一键“基础清扫”
   - 唯余法（Naked Single）
   - 行、列、宫摒除法（Hidden Single）
@@ -45,6 +46,16 @@ Flutter SDK 位于：
 
 - iPhone/iPad：完整 Xcode + CocoaPods
 - Android：Android Studio + Android SDK
+
+### 一键启动（macOS）
+
+在 Finder 中双击项目根目录的 `start_sudoku.command`，或在终端执行：
+
+```bash
+./start_sudoku.command
+```
+
+脚本会启动无调试连接的本机网页版并自动打开 Chrome，避免 Flutter 调试 WebSocket 受防火墙或代理影响。如果代码有更新，它会先自动构建最新版本。
 
 临时配置国内镜像并运行测试：
 

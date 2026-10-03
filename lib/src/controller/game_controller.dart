@@ -82,19 +82,16 @@ class GameController extends ChangeNotifier {
         throw const FormatException('保存的给定数与题目不一致');
       }
       final value = values[index];
-      if (value < 0 ||
-          value > 9 ||
-          (value != 0 && controller.solution[index] != value)) {
-        throw const FormatException('保存的盘面与题目唯一解矛盾');
+      if (value < 0 || value > 9) {
+        throw const FormatException('保存的盘面数字不正确');
       }
     }
-
     controller.board.replacePlayableValues(values);
     controller.excludedMasks.setAll(0, excludedMasks);
     controller.manualCandidateMasks.setAll(0, savedManualMasks);
     controller.candidatesVisible = candidatesVisible;
     controller.assistedCells.addAll(assistedCells);
-    controller.statusMessage = controller.board.isComplete
+    controller.statusMessage = controller.isComplete
         ? '已恢复完成的题目'
         : '已恢复上次的解题进度';
     return controller;
@@ -118,7 +115,8 @@ class GameController extends ChangeNotifier {
   int hintLevel = 0;
 
   bool get canUndo => _history.isNotEmpty;
-  bool get isComplete => board.isComplete;
+  bool get isComplete =>
+      board.isComplete && _engine.validate(board.values) == null;
   bool get hasHint => hintStep != null;
 
   List<int> get puzzleValues => List<int>.generate(
@@ -168,6 +166,24 @@ class GameController extends ChangeNotifier {
     return value != 0 && board.valueAt(index) == value;
   }
 
+  bool isConflictingCell(int index) {
+    final value = board.valueAt(index);
+    if (value == 0) return false;
+    final row = index ~/ 9;
+    final column = index % 9;
+    final box = (row ~/ 3) * 3 + column ~/ 3;
+    for (final unit in [
+      SudokuEngine.rows[row],
+      SudokuEngine.columns[column],
+      SudokuEngine.boxes[box],
+    ]) {
+      if (unit.any((peer) => peer != index && board.valueAt(peer) == value)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   void selectCell(int index) {
     selectedIndex = index;
     notifyListeners();
@@ -189,21 +205,14 @@ class GameController extends ChangeNotifier {
     }
 
     if (board.valueAt(index) == digit) return;
-    if (!_engine.canPlace(board.values, index, digit)) {
-      statusMessage = '数字 $digit 与同行、同列或同宫冲突';
-      notifyListeners();
-      return;
-    }
-    if (solution[index] != digit) {
-      statusMessage = '数字 $digit 与题目的唯一解矛盾';
-      notifyListeners();
-      return;
-    }
-
     _pushHistory();
     board.setValue(index, digit);
     assistedCells.remove(index);
-    statusMessage = board.isComplete ? '完成了！' : '已填写 $digit';
+    statusMessage = isComplete
+        ? '完成了！'
+        : isConflictingCell(index)
+        ? '已填写 $digit；与同行、同列或同宫的数字重复'
+        : '已填写 $digit';
     notifyListeners();
   }
 
@@ -277,6 +286,16 @@ class GameController extends ChangeNotifier {
   }
 
   BasicSweepResult applyBasicSweep() {
+    final deadEnd = _deadEndMessage();
+    if (deadEnd != null) {
+      statusMessage = deadEnd;
+      notifyListeners();
+      return BasicSweepResult(
+        values: List<int>.of(board.values),
+        steps: const [],
+        error: deadEnd,
+      );
+    }
     final result = _engine.basicSweep(
       source: board.values,
       excludedMasks: excludedMasks,
@@ -306,6 +325,13 @@ class GameController extends ChangeNotifier {
   void requestHint() {
     if (board.isComplete) {
       statusMessage = '题目已经完成';
+      notifyListeners();
+      return;
+    }
+    final deadEnd = _deadEndMessage();
+    if (deadEnd != null) {
+      _clearHintInternal();
+      statusMessage = deadEnd;
       notifyListeners();
       return;
     }
@@ -410,5 +436,10 @@ class GameController extends ChangeNotifier {
   void _clearHintInternal() {
     hintStep = null;
     hintLevel = 0;
+  }
+
+  String? _deadEndMessage() {
+    final analysis = _engine.analyzeSolutions(board.values, limit: 1);
+    return analysis.solutionCount == 0 ? '当前盘面已无解，请撤销或检查已填数字' : null;
   }
 }

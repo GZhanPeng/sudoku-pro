@@ -51,6 +51,70 @@ void main() {
     expect(controller.visibleCandidateMaskAt(2) & SudokuEngine.bitFor(1), 0);
   });
 
+  test('a locally legal wrong digit is accepted as a normal trial', () {
+    final controller = GameController.fromPuzzle(SudokuBoard.parse(puzzle));
+    addTearDown(controller.dispose);
+
+    controller.selectCell(2);
+    controller.enterDigit(1);
+
+    expect(controller.valueAt(2), 1);
+    expect(controller.statusMessage, '已填写 1');
+    expect(controller.canUndo, isTrue);
+  });
+
+  test('a conflicting digit is accepted and marked instead of blocked', () {
+    final controller = GameController.fromPuzzle(SudokuBoard.parse(puzzle));
+    addTearDown(controller.dispose);
+
+    controller.selectCell(2);
+    controller.enterDigit(5);
+
+    expect(controller.valueAt(2), 5);
+    expect(controller.isConflictingCell(2), isTrue);
+    expect(controller.isConflictingCell(0), isTrue);
+    expect(controller.statusMessage, contains('数字重复'));
+    expect(controller.isComplete, isFalse);
+  });
+
+  test('assistance reports a dead end without deleting a wrong trial', () {
+    final controller = GameController.fromPuzzle(SudokuBoard.parse(puzzle));
+    addTearDown(controller.dispose);
+    controller.selectCell(2);
+    controller.enterDigit(1);
+
+    final result = controller.applyBasicSweep();
+
+    expect(result.hasError, isTrue);
+    expect(controller.valueAt(2), 1);
+    expect(controller.statusMessage, contains('当前盘面已无解'));
+
+    controller.requestHint();
+    expect(controller.hintStep, isNull);
+    expect(controller.statusMessage, contains('当前盘面已无解'));
+  });
+
+  test('saved progress can restore a conflicting trial', () {
+    final original = GameController.fromPuzzle(SudokuBoard.parse(puzzle));
+    addTearDown(original.dispose);
+    original.selectCell(2);
+    original.enterDigit(5);
+
+    final restored = GameController.resume(
+      puzzle: SudokuBoard.fromValues(original.puzzleValues),
+      values: original.board.values.toList(),
+      excludedMasks: List<int>.of(original.excludedMasks),
+      manualCandidateMasks: List<int>.of(original.manualCandidateMasks),
+      candidatesVisible: original.candidatesVisible,
+      assistedCells: Set<int>.of(original.assistedCells),
+    );
+    addTearDown(restored.dispose);
+
+    expect(restored.valueAt(2), 5);
+    expect(restored.isConflictingCell(2), isTrue);
+    expect(restored.statusMessage, '已恢复上次的解题进度');
+  });
+
   test('a complete basic sweep can be undone as one action', () {
     final controller = GameController.fromPuzzle(SudokuBoard.parse(puzzle));
     addTearDown(controller.dispose);

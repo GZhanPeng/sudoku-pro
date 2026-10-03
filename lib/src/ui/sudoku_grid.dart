@@ -44,6 +44,7 @@ class _SudokuCell extends StatelessWidget {
     final sameValue = controller.hasSameValueAsSelected(index);
     final peer = controller.isPeerOfSelected(index);
     final value = controller.valueAt(index);
+    final conflicting = controller.isConflictingCell(index);
 
     Color background = colors.surface;
     if (peer) background = colors.primaryContainer.withValues(alpha: 0.28);
@@ -91,7 +92,9 @@ class _SudokuCell extends StatelessWidget {
                       fontWeight: controller.isGiven(index)
                           ? FontWeight.w700
                           : FontWeight.w600,
-                      color: controller.isGiven(index)
+                      color: conflicting
+                          ? colors.error
+                          : controller.isGiven(index)
                           ? colors.onSurface
                           : controller.assistedCells.contains(index)
                           ? const Color(0xFF2E7D5B)

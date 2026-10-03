@@ -9,9 +9,35 @@ void main() {
 
     expect(find.text('数独助手'), findsOneWidget);
     expect(find.text('自动生成新题'), findsOneWidget);
+    expect(find.text('技巧练习'), findsOneWidget);
     expect(find.text('拍照导入并校对'), findsOneWidget);
     expect(find.text('手动录入题目'), findsOneWidget);
     expect(find.text('打开示例盘面'), findsOneWidget);
+  });
+
+  testWidgets('practice catalog opens a prepared technique lesson', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const SudokuHelperApp());
+    await tester.tap(find.text('技巧练习'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('X-Wing'), findsOneWidget);
+    expect(find.text('空矩形'), findsOneWidget);
+    expect(find.text('W-Wing'), findsOneWidget);
+
+    await tester.tap(find.text('X-Wing'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('技巧练习 · X-Wing'), findsOneWidget);
+    expect(find.textContaining('练习已就绪'), findsOneWidget);
+    expect(find.text('提示'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('home and game screens fit a phone-sized viewport', (

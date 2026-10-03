@@ -15,7 +15,7 @@ extension PuzzleDifficultyInfo on PuzzleDifficulty {
     PuzzleDifficulty.beginner => '唯余与宫行列摈除',
     PuzzleDifficulty.easy => '加入区块摈除和显性数对',
     PuzzleDifficulty.medium => '加入数组、隐性数对和 X-Wing',
-    PuzzleDifficulty.hard => '需要摩天楼、双线风筝或 XY-Wing 等结构',
+    PuzzleDifficulty.hard => '加入翼、短链和分组结构',
   };
 
   int get rank => index;
@@ -33,6 +33,8 @@ enum LogicalTechnique {
   xWing,
   skyscraper,
   twoStringKite,
+  emptyRectangle,
+  wWing,
   xyWing,
 }
 
@@ -49,6 +51,8 @@ extension LogicalTechniqueInfo on LogicalTechnique {
     LogicalTechnique.xWing => 'X-Wing',
     LogicalTechnique.skyscraper => '摩天楼',
     LogicalTechnique.twoStringKite => '双线风筝',
+    LogicalTechnique.emptyRectangle => '空矩形',
+    LogicalTechnique.wWing => 'W-Wing',
     LogicalTechnique.xyWing => 'XY-Wing',
   };
 
@@ -64,6 +68,8 @@ extension LogicalTechniqueInfo on LogicalTechnique {
     LogicalTechnique.xWing => PuzzleDifficulty.medium,
     LogicalTechnique.skyscraper ||
     LogicalTechnique.twoStringKite ||
+    LogicalTechnique.emptyRectangle ||
+    LogicalTechnique.wWing ||
     LogicalTechnique.xyWing => PuzzleDifficulty.hard,
   };
 }
@@ -106,6 +112,18 @@ class LogicalLink {
   int get hashCode => Object.hash(first, second, strength);
 }
 
+class LogicalGroupLink {
+  const LogicalGroupLink({
+    required this.firstGroup,
+    required this.secondGroup,
+    required this.strength,
+  });
+
+  final List<CandidateRef> firstGroup;
+  final List<CandidateRef> secondGroup;
+  final LogicalLinkStrength strength;
+}
+
 class LogicalStep {
   const LogicalStep({
     required this.technique,
@@ -116,6 +134,7 @@ class LogicalStep {
     this.placementIndex,
     this.placementDigit,
     this.links = const [],
+    this.groupLinks = const [],
   });
 
   final LogicalTechnique technique;
@@ -124,6 +143,7 @@ class LogicalStep {
   final int? placementIndex;
   final int? placementDigit;
   final List<LogicalLink> links;
+  final List<LogicalGroupLink> groupLinks;
   final String focus;
   final String explanation;
 
@@ -222,6 +242,10 @@ class LogicalSolver {
       if (step != null) return step;
       step = _findTwoStringKite(masks);
       if (step != null) return step;
+      step = _findEmptyRectangle(masks);
+      if (step != null) return step;
+      step = _findWWing(masks);
+      if (step != null) return step;
       step = _findXYWing(values, masks);
       if (step != null) return step;
     }
@@ -252,6 +276,8 @@ class LogicalSolver {
       LogicalTechnique.xWing => _findXWing(values, masks),
       LogicalTechnique.skyscraper => _findSkyscraper(masks),
       LogicalTechnique.twoStringKite => _findTwoStringKite(masks),
+      LogicalTechnique.emptyRectangle => _findEmptyRectangle(masks),
+      LogicalTechnique.wWing => _findWWing(masks),
       LogicalTechnique.xyWing => _findXYWing(values, masks),
     };
   }
@@ -836,6 +862,265 @@ class LogicalSolver {
             _arePeers(index, second))
           CandidateRef(index, digit),
     ];
+  }
+
+  LogicalStep? _findEmptyRectangle(List<int> masks) {
+    for (var digit = 1; digit <= 9; digit++) {
+      final bit = SudokuEngine.bitFor(digit);
+      for (var box = 0; box < 9; box++) {
+        final boxCandidates = [
+          for (final index in SudokuEngine.boxes[box])
+            if ((masks[index] & bit) != 0) index,
+        ];
+        if (boxCandidates.length < 3) continue;
+        final boxRows = SudokuEngine.boxes[box]
+            .map((index) => index ~/ 9)
+            .toSet();
+        final boxColumns = SudokuEngine.boxes[box]
+            .map((index) => index % 9)
+            .toSet();
+
+        for (final erRow in boxRows) {
+          for (final erColumn in boxColumns) {
+            final intersection = erRow * 9 + erColumn;
+            if ((masks[intersection] & bit) != 0 ||
+                !boxCandidates.every(
+                  (index) => index ~/ 9 == erRow || index % 9 == erColumn,
+                )) {
+              continue;
+            }
+            final rowArm = [
+              for (final index in boxCandidates)
+                if (index ~/ 9 == erRow) CandidateRef(index, digit),
+            ];
+            final columnArm = [
+              for (final index in boxCandidates)
+                if (index % 9 == erColumn) CandidateRef(index, digit),
+            ];
+            if (rowArm.isEmpty || columnArm.isEmpty) continue;
+
+            for (var linkColumn = 0; linkColumn < 9; linkColumn++) {
+              if (boxColumns.contains(linkColumn)) continue;
+              final near = erRow * 9 + linkColumn;
+              final conjugate = [
+                for (final index in SudokuEngine.columns[linkColumn])
+                  if ((masks[index] & bit) != 0) index,
+              ];
+              if (conjugate.length != 2 || !conjugate.contains(near)) {
+                continue;
+              }
+              final far = conjugate.firstWhere((index) => index != near);
+              final target = far ~/ 9 * 9 + erColumn;
+              if (_boxOf(target) == box || (masks[target] & bit) == 0) {
+                continue;
+              }
+              return _emptyRectangleStep(
+                digit: digit,
+                box: box,
+                rowArm: rowArm,
+                columnArm: columnArm,
+                near: near,
+                far: far,
+                target: target,
+                externalUnit:
+                    '第 ${linkColumn + 1} 列 ${_cellLabel(near)}—${_cellLabel(far)}',
+                connectedArm: rowArm,
+                oppositeArm: columnArm,
+              );
+            }
+
+            for (var linkRow = 0; linkRow < 9; linkRow++) {
+              if (boxRows.contains(linkRow)) continue;
+              final near = linkRow * 9 + erColumn;
+              final conjugate = [
+                for (final index in SudokuEngine.rows[linkRow])
+                  if ((masks[index] & bit) != 0) index,
+              ];
+              if (conjugate.length != 2 || !conjugate.contains(near)) {
+                continue;
+              }
+              final far = conjugate.firstWhere((index) => index != near);
+              final target = erRow * 9 + far % 9;
+              if (_boxOf(target) == box || (masks[target] & bit) == 0) {
+                continue;
+              }
+              return _emptyRectangleStep(
+                digit: digit,
+                box: box,
+                rowArm: rowArm,
+                columnArm: columnArm,
+                near: near,
+                far: far,
+                target: target,
+                externalUnit:
+                    '第 ${linkRow + 1} 行 ${_cellLabel(near)}—${_cellLabel(far)}',
+                connectedArm: columnArm,
+                oppositeArm: rowArm,
+              );
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  LogicalStep _emptyRectangleStep({
+    required int digit,
+    required int box,
+    required List<CandidateRef> rowArm,
+    required List<CandidateRef> columnArm,
+    required int near,
+    required int far,
+    required int target,
+    required String externalUnit,
+    required List<CandidateRef> connectedArm,
+    required List<CandidateRef> oppositeArm,
+  }) {
+    final nearCandidate = CandidateRef(near, digit);
+    final farCandidate = CandidateRef(far, digit);
+    return LogicalStep(
+      technique: LogicalTechnique.emptyRectangle,
+      pattern: {...rowArm, ...columnArm, nearCandidate, farCandidate}.toList(),
+      eliminations: [CandidateRef(target, digit)],
+      links: [
+        LogicalLink(
+          first: farCandidate,
+          second: nearCandidate,
+          strength: LogicalLinkStrength.strong,
+        ),
+      ],
+      groupLinks: [
+        LogicalGroupLink(
+          firstGroup: [nearCandidate],
+          secondGroup: connectedArm,
+          strength: LogicalLinkStrength.weak,
+        ),
+        LogicalGroupLink(
+          firstGroup: connectedArm,
+          secondGroup: oppositeArm,
+          strength: LogicalLinkStrength.strong,
+        ),
+      ],
+      focus: '观察第 ${box + 1} 宫内候选 $digit 形成的行列交叉，以及$externalUnit的强链。',
+      explanation:
+          '第 ${box + 1} 宫的所有 $digit 都被限制在一条行臂和一条列臂上，两组候选构成分组强链。外部的 $externalUnit 又是强链：无论该强链哪端为真，${_cellLabel(target)} 的候选 $digit 都会被消去。',
+    );
+  }
+
+  LogicalStep? _findWWing(List<int> masks) {
+    final bivalueCells = [
+      for (var index = 0; index < SudokuBoard.cellCount; index++)
+        if (SudokuEngine.countBits(masks[index]) == 2) index,
+    ];
+    for (final wings in _combinations(bivalueCells, 2)) {
+      final firstWing = wings[0];
+      final secondWing = wings[1];
+      final wingMask = masks[firstWing];
+      if (wingMask != masks[secondWing] || _arePeers(firstWing, secondWing)) {
+        continue;
+      }
+      final wingDigits = SudokuEngine.digitsInMask(wingMask);
+      for (final linkDigit in wingDigits) {
+        final eliminationDigit = wingDigits.firstWhere(
+          (digit) => digit != linkDigit,
+        );
+        for (final strongPair in _conjugatePairs(masks, linkDigit)) {
+          var firstLink = strongPair.$1;
+          var secondLink = strongPair.$2;
+          if ({firstWing, secondWing, firstLink, secondLink}.length != 4) {
+            continue;
+          }
+          final direct =
+              _arePeers(firstWing, firstLink) &&
+              _arePeers(secondWing, secondLink);
+          final reversed =
+              _arePeers(firstWing, secondLink) &&
+              _arePeers(secondWing, firstLink);
+          if (!direct && !reversed) continue;
+          if (!direct) {
+            final temporary = firstLink;
+            firstLink = secondLink;
+            secondLink = temporary;
+          }
+          final eliminations = _commonPeerEliminations(
+            masks: masks,
+            digit: eliminationDigit,
+            first: firstWing,
+            second: secondWing,
+            excludedIndices: {firstWing, secondWing, firstLink, secondLink},
+          );
+          if (eliminations.isEmpty) continue;
+
+          final firstOuter = CandidateRef(firstWing, eliminationDigit);
+          final firstInner = CandidateRef(firstWing, linkDigit);
+          final firstLinkCandidate = CandidateRef(firstLink, linkDigit);
+          final secondLinkCandidate = CandidateRef(secondLink, linkDigit);
+          final secondInner = CandidateRef(secondWing, linkDigit);
+          final secondOuter = CandidateRef(secondWing, eliminationDigit);
+          return LogicalStep(
+            technique: LogicalTechnique.wWing,
+            pattern: [
+              firstOuter,
+              firstInner,
+              firstLinkCandidate,
+              secondLinkCandidate,
+              secondInner,
+              secondOuter,
+            ],
+            eliminations: eliminations,
+            links: [
+              LogicalLink(
+                first: firstOuter,
+                second: firstInner,
+                strength: LogicalLinkStrength.strong,
+              ),
+              LogicalLink(
+                first: firstInner,
+                second: firstLinkCandidate,
+                strength: LogicalLinkStrength.weak,
+              ),
+              LogicalLink(
+                first: firstLinkCandidate,
+                second: secondLinkCandidate,
+                strength: LogicalLinkStrength.strong,
+              ),
+              LogicalLink(
+                first: secondLinkCandidate,
+                second: secondInner,
+                strength: LogicalLinkStrength.weak,
+              ),
+              LogicalLink(
+                first: secondInner,
+                second: secondOuter,
+                strength: LogicalLinkStrength.strong,
+              ),
+            ],
+            focus:
+                '观察 ${_cellLabel(firstWing)} 和 ${_cellLabel(secondWing)} 这两个同候选双值格，以及候选 $linkDigit 的外部强链。',
+            explanation:
+                '两个翼格都是 ${wingDigits.join('/')} 双值格，候选 $linkDigit 通过 ${_cellLabel(firstLink)}—${_cellLabel(secondLink)} 的强链连接。无论强链哪端为真，两翼中至少一格必须取 $eliminationDigit，所以同时看到两翼的格可删除 $eliminationDigit。',
+          );
+        }
+      }
+    }
+    return null;
+  }
+
+  List<(int, int)> _conjugatePairs(List<int> masks, int digit) {
+    final bit = SudokuEngine.bitFor(digit);
+    final pairs = <(int, int)>{};
+    for (final unit in SudokuEngine.allUnits) {
+      final positions = [
+        for (final index in unit)
+          if ((masks[index] & bit) != 0) index,
+      ];
+      if (positions.length != 2) continue;
+      final first = positions[0] < positions[1] ? positions[0] : positions[1];
+      final second = positions[0] < positions[1] ? positions[1] : positions[0];
+      pairs.add((first, second));
+    }
+    return pairs.toList();
   }
 
   LogicalStep? _findXYWing(List<int> values, List<int> masks) {

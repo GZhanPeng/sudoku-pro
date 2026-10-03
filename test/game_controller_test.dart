@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sudoku_helper/src/controller/game_controller.dart';
+import 'package:sudoku_helper/src/logic/logical_solver.dart';
+import 'package:sudoku_helper/src/logic/practice_puzzles.dart';
 import 'package:sudoku_helper/src/logic/sudoku_engine.dart';
 import 'package:sudoku_helper/src/model/sudoku_board.dart';
 
@@ -15,6 +17,21 @@ const puzzle =
     '000080079';
 
 void main() {
+  for (final practice in practicePuzzles) {
+    test('practice prepares ${practice.technique.label} as the next step', () {
+      final controller = GameController.practice(
+        SudokuBoard.parse(practice.puzzle),
+        practice.technique,
+      );
+      addTearDown(controller.dispose);
+
+      expect(controller.candidatesVisible, isTrue);
+      expect(controller.statusMessage, contains(practice.technique.label));
+      controller.requestHint();
+      expect(controller.hintStep?.technique, practice.technique);
+    });
+  }
+
   test('note mode marks candidates manually without triggering full marks', () {
     final controller = GameController.fromPuzzle(SudokuBoard.parse(puzzle));
     addTearDown(controller.dispose);

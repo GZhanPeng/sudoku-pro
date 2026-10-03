@@ -6,9 +6,16 @@ import '../persistence/saved_game_repository.dart';
 import 'sudoku_grid.dart';
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key, required this.controller});
+  const GameScreen({
+    super.key,
+    required this.controller,
+    this.title,
+    this.saveProgress = true,
+  });
 
   final GameController controller;
+  final String? title;
+  final bool saveProgress;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -22,16 +29,20 @@ class _GameScreenState extends State<GameScreen> {
   @override
   void initState() {
     super.initState();
-    controller.addListener(_saveProgress);
-    _saveProgress();
+    if (widget.saveProgress) {
+      controller.addListener(_saveProgress);
+      _saveProgress();
+    }
   }
 
   void _saveProgress() => _savedGames.save(controller);
 
   @override
   void dispose() {
-    _saveProgress();
-    controller.removeListener(_saveProgress);
+    if (widget.saveProgress) {
+      _saveProgress();
+      controller.removeListener(_saveProgress);
+    }
     controller.dispose();
     super.dispose();
   }
@@ -64,9 +75,10 @@ class _GameScreenState extends State<GameScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          controller.difficulty == null
-              ? '经典 9×9'
-              : '经典 9×9 · ${controller.difficulty!.label}',
+          widget.title ??
+              (controller.difficulty == null
+                  ? '经典 9×9'
+                  : '经典 9×9 · ${controller.difficulty!.label}'),
         ),
         actions: [
           PopupMenuButton<String>(
@@ -285,7 +297,8 @@ class _HintPanel extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(explained ? step.explanation : step.focus),
-            if (explained && step.links.isNotEmpty) ...[
+            if (explained &&
+                (step.links.isNotEmpty || step.groupLinks.isNotEmpty)) ...[
               const SizedBox(height: 10),
               _ChainLegend(colors: colors),
             ],

@@ -29,11 +29,13 @@ class SudokuGrid extends StatelessWidget {
             itemBuilder: (context, index) =>
                 _SudokuCell(index: index, controller: controller),
           ),
-          if (controller.hintLinks.isNotEmpty)
+          if (controller.hintLinks.isNotEmpty ||
+              controller.hintGroupLinks.isNotEmpty)
             IgnorePointer(
               child: CustomPaint(
                 painter: _ChainPainter(
                   links: controller.hintLinks,
+                  groupLinks: controller.hintGroupLinks,
                   strongColor: colors.primary,
                   weakColor: colors.secondary,
                 ),
@@ -48,11 +50,13 @@ class SudokuGrid extends StatelessWidget {
 class _ChainPainter extends CustomPainter {
   const _ChainPainter({
     required this.links,
+    required this.groupLinks,
     required this.strongColor,
     required this.weakColor,
   });
 
   final List<LogicalLink> links;
+  final List<LogicalGroupLink> groupLinks;
   final Color strongColor;
   final Color weakColor;
 
@@ -93,6 +97,36 @@ class _ChainPainter extends CustomPainter {
       }
     }
 
+    for (final link in groupLinks) {
+      final start = _groupCenter(link.firstGroup, cellWidth, cellHeight);
+      final end = _groupCenter(link.secondGroup, cellWidth, cellHeight);
+      final delta = end - start;
+      final distance = delta.distance;
+      if (distance == 0) continue;
+      final direction = delta / distance;
+      final adjustedStart = start + direction * nodeRadius;
+      final adjustedEnd = end - direction * nodeRadius;
+      final color = link.strength == LogicalLinkStrength.strong
+          ? strongColor
+          : weakColor;
+      final paint = Paint()
+        ..color = color.withValues(alpha: 0.92)
+        ..strokeWidth = link.strength == LogicalLinkStrength.strong ? 2.6 : 2.0
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke;
+      if (link.strength == LogicalLinkStrength.strong) {
+        canvas.drawLine(adjustedStart, adjustedEnd, paint);
+      } else {
+        _drawDashedLine(canvas, adjustedStart, adjustedEnd, paint);
+      }
+      for (final candidate in [...link.firstGroup, ...link.secondGroup]) {
+        final previous = nodeStrengths[candidate];
+        if (previous == null || link.strength == LogicalLinkStrength.strong) {
+          nodeStrengths[candidate] = link.strength;
+        }
+      }
+    }
+
     for (final entry in nodeStrengths.entries) {
       final color = entry.value == LogicalLinkStrength.strong
           ? strongColor
@@ -123,6 +157,21 @@ class _ChainPainter extends CustomPainter {
     );
   }
 
+  Offset _groupCenter(
+    List<CandidateRef> group,
+    double cellWidth,
+    double cellHeight,
+  ) {
+    var dx = 0.0;
+    var dy = 0.0;
+    for (final candidate in group) {
+      final center = _candidateCenter(candidate, cellWidth, cellHeight);
+      dx += center.dx;
+      dy += center.dy;
+    }
+    return Offset(dx / group.length, dy / group.length);
+  }
+
   void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
     final delta = end - start;
     final distance = delta.distance;
@@ -147,6 +196,7 @@ class _ChainPainter extends CustomPainter {
   @override
   bool shouldRepaint(_ChainPainter oldDelegate) =>
       oldDelegate.links != links ||
+      oldDelegate.groupLinks != groupLinks ||
       oldDelegate.strongColor != strongColor ||
       oldDelegate.weakColor != weakColor;
 }

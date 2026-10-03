@@ -49,6 +49,44 @@ class GameController extends ChangeNotifier {
     );
   }
 
+  factory GameController.practice(SudokuBoard puzzle, LogicalTechnique target) {
+    final controller = GameController.fromPuzzle(
+      puzzle,
+      difficulty: target.difficulty,
+    );
+    final values = List<int>.of(puzzle.values);
+    final excludedMasks = List<int>.filled(SudokuBoard.cellCount, 0);
+
+    for (var count = 0; count < 600; count++) {
+      final step = controller._logicalSolver.findNext(
+        values: values,
+        excludedMasks: excludedMasks,
+      );
+      if (step == null) break;
+      if (step.technique == target) {
+        controller.board.replacePlayableValues(values);
+        controller.excludedMasks.setAll(0, excludedMasks);
+        controller.assistedCells.addAll(
+          List<int>.generate(
+            SudokuBoard.cellCount,
+            (index) => index,
+          ).where((index) => !puzzle.isGiven(index) && values[index] != 0),
+        );
+        controller.candidatesVisible = true;
+        controller.statusMessage = '练习已就绪：点击“提示”观察${target.label}';
+        return controller;
+      }
+      controller._logicalSolver.applyStep(
+        values: values,
+        excludedMasks: excludedMasks,
+        step: step,
+      );
+    }
+
+    controller.dispose();
+    throw ArgumentError('这道练习题无法推进到 ${target.label}');
+  }
+
   factory GameController.resume({
     required SudokuBoard puzzle,
     required List<int> values,
@@ -150,6 +188,9 @@ class GameController extends ChangeNotifier {
 
   List<LogicalLink> get hintLinks =>
       hintLevel >= 2 ? hintStep?.links ?? const [] : const [];
+
+  List<LogicalGroupLink> get hintGroupLinks =>
+      hintLevel >= 2 ? hintStep?.groupLinks ?? const [] : const [];
 
   bool isPeerOfSelected(int index) {
     final selected = selectedIndex;

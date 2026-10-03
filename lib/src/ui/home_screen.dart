@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../controller/game_controller.dart';
 import '../logic/logical_solver.dart';
+import '../logic/practice_puzzles.dart';
 import '../logic/puzzle_generator.dart';
 import '../model/sudoku_board.dart';
 import '../persistence/saved_game_repository.dart';
@@ -120,6 +121,15 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
+                        FilledButton.tonalIcon(
+                          onPressed: () => _choosePractice(context),
+                          icon: const Icon(Icons.school_outlined),
+                          label: const Text('技巧练习'),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(52),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
                         OutlinedButton.icon(
                           onPressed: () =>
                               _openEntry(context, startWithCamera: !kIsWeb),
@@ -215,6 +225,70 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (mounted) setState(_refreshSavedGame);
+  }
+
+  Future<void> _choosePractice(BuildContext context) async {
+    final practice = await showModalBottomSheet<PracticePuzzle>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '技巧练习',
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '自动完成前置步骤，让目标技巧成为下一步',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                for (final item in practicePuzzles)
+                  ListTile(
+                    leading: const CircleAvatar(
+                      child: Icon(Icons.route_outlined),
+                    ),
+                    title: Text(item.technique.label),
+                    subtitle: Text(item.summary),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.pop(context, item),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (practice == null || !context.mounted) return;
+
+    try {
+      final controller = GameController.practice(
+        SudokuBoard.parse(practice.puzzle),
+        practice.technique,
+      );
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => GameScreen(
+            controller: controller,
+            title: '技巧练习 · ${practice.technique.label}',
+            saveProgress: false,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('练习题加载失败：$error')));
+    }
   }
 
   Future<void> _chooseDifficulty(BuildContext context) async {

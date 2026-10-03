@@ -55,14 +55,59 @@ void main() {
     }
   });
 
-  test('hard puzzle includes an explainable XY-Wing step', () {
+  test('hard puzzle includes an explainable advanced structure', () {
     final generated = generator.generate(PuzzleDifficulty.hard, seed: 20260932);
     final result = logicalSolver.solve(generated.puzzle.values);
 
     expect(result.solved, isTrue);
     expect(
-      result.steps.any((step) => step.technique == LogicalTechnique.xyWing),
+      result.steps.any((step) => step.difficulty == PuzzleDifficulty.hard),
       isTrue,
     );
   });
+
+  test('skyscraper exposes a strong-weak-strong chain', () {
+    final state = _syntheticChainState();
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.skyscraper,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.skyscraper);
+    expect(step.eliminations, contains(const CandidateRef(14, 9)));
+    expect(step.links.map((link) => link.strength), [
+      LogicalLinkStrength.strong,
+      LogicalLinkStrength.weak,
+      LogicalLinkStrength.strong,
+    ]);
+  });
+
+  test('two-string kite exposes a strong-weak-strong chain', () {
+    final state = _syntheticChainState();
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.twoStringKite,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.twoStringKite);
+    expect(step.eliminations, contains(const CandidateRef(36, 9)));
+    expect(step.links.map((link) => link.strength), [
+      LogicalLinkStrength.strong,
+      LogicalLinkStrength.weak,
+      LogicalLinkStrength.strong,
+    ]);
+  });
+}
+
+({List<int> values, List<int> excludedMasks}) _syntheticChainState() {
+  const allowedNines = {0, 4, 14, 36, 41};
+  final excludedMasks = List<int>.generate(
+    81,
+    (index) => allowedNines.contains(index) ? 0 : SudokuEngine.bitFor(9),
+  );
+  return (values: List<int>.filled(81, 0), excludedMasks: excludedMasks);
 }

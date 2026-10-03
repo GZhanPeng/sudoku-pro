@@ -148,6 +148,9 @@ class GameController extends ChangeNotifier {
   int hintEliminationMaskAt(int index) =>
       hintLevel >= 2 ? hintStep?.eliminationMaskAt(index) ?? 0 : 0;
 
+  List<LogicalLink> get hintLinks =>
+      hintLevel >= 2 ? hintStep?.links ?? const [] : const [];
+
   bool isPeerOfSelected(int index) {
     final selected = selectedIndex;
     if (selected == null || selected == index) return false;

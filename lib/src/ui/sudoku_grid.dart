@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../controller/game_controller.dart';
+import '../logic/logical_solver.dart';
 import '../logic/sudoku_engine.dart';
 
 class SudokuGrid extends StatelessWidget {
@@ -16,17 +17,138 @@ class SudokuGrid extends StatelessWidget {
         color: colors.surface,
         border: Border.all(color: colors.onSurface, width: 2.2),
       ),
-      child: GridView.builder(
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 9,
-        ),
-        itemCount: 81,
-        itemBuilder: (context, index) =>
-            _SudokuCell(index: index, controller: controller),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          GridView.builder(
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 9,
+            ),
+            itemCount: 81,
+            itemBuilder: (context, index) =>
+                _SudokuCell(index: index, controller: controller),
+          ),
+          if (controller.hintLinks.isNotEmpty)
+            IgnorePointer(
+              child: CustomPaint(
+                painter: _ChainPainter(
+                  links: controller.hintLinks,
+                  strongColor: colors.primary,
+                  weakColor: colors.secondary,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
+}
+
+class _ChainPainter extends CustomPainter {
+  const _ChainPainter({
+    required this.links,
+    required this.strongColor,
+    required this.weakColor,
+  });
+
+  final List<LogicalLink> links;
+  final Color strongColor;
+  final Color weakColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cellWidth = size.width / 9;
+    final cellHeight = size.height / 9;
+    final nodeRadius = (cellWidth < cellHeight ? cellWidth : cellHeight) / 9;
+    final nodeStrengths = <CandidateRef, LogicalLinkStrength>{};
+
+    for (final link in links) {
+      final start = _candidateCenter(link.first, cellWidth, cellHeight);
+      final end = _candidateCenter(link.second, cellWidth, cellHeight);
+      final delta = end - start;
+      final distance = delta.distance;
+      if (distance == 0) continue;
+      final direction = delta / distance;
+      final adjustedStart = start + direction * nodeRadius;
+      final adjustedEnd = end - direction * nodeRadius;
+      final color = link.strength == LogicalLinkStrength.strong
+          ? strongColor
+          : weakColor;
+      final paint = Paint()
+        ..color = color.withValues(alpha: 0.92)
+        ..strokeWidth = link.strength == LogicalLinkStrength.strong ? 2.2 : 1.8
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke;
+      if (link.strength == LogicalLinkStrength.strong) {
+        canvas.drawLine(adjustedStart, adjustedEnd, paint);
+      } else {
+        _drawDashedLine(canvas, adjustedStart, adjustedEnd, paint);
+      }
+      for (final candidate in [link.first, link.second]) {
+        final previous = nodeStrengths[candidate];
+        if (previous == null || link.strength == LogicalLinkStrength.strong) {
+          nodeStrengths[candidate] = link.strength;
+        }
+      }
+    }
+
+    for (final entry in nodeStrengths.entries) {
+      final color = entry.value == LogicalLinkStrength.strong
+          ? strongColor
+          : weakColor;
+      canvas.drawCircle(
+        _candidateCenter(entry.key, cellWidth, cellHeight),
+        nodeRadius,
+        Paint()
+          ..color = color
+          ..strokeWidth = 1.6
+          ..style = PaintingStyle.stroke,
+      );
+    }
+  }
+
+  Offset _candidateCenter(
+    CandidateRef candidate,
+    double cellWidth,
+    double cellHeight,
+  ) {
+    final row = candidate.index ~/ 9;
+    final column = candidate.index % 9;
+    final candidateRow = (candidate.digit - 1) ~/ 3;
+    final candidateColumn = (candidate.digit - 1) % 3;
+    return Offset(
+      column * cellWidth + (candidateColumn + 0.5) * cellWidth / 3,
+      row * cellHeight + (candidateRow + 0.5) * cellHeight / 3,
+    );
+  }
+
+  void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint) {
+    final delta = end - start;
+    final distance = delta.distance;
+    if (distance == 0) return;
+    final direction = delta / distance;
+    const dashLength = 5.0;
+    const gapLength = 3.5;
+    for (
+      var offset = 0.0;
+      offset < distance;
+      offset += dashLength + gapLength
+    ) {
+      final dashEnd = (offset + dashLength).clamp(0.0, distance);
+      canvas.drawLine(
+        start + direction * offset,
+        start + direction * dashEnd,
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ChainPainter oldDelegate) =>
+      oldDelegate.links != links ||
+      oldDelegate.strongColor != strongColor ||
+      oldDelegate.weakColor != weakColor;
 }
 
 class _SudokuCell extends StatelessWidget {

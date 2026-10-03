@@ -15,7 +15,7 @@ extension PuzzleDifficultyInfo on PuzzleDifficulty {
     PuzzleDifficulty.beginner => '唯余与宫行列摈除',
     PuzzleDifficulty.easy => '加入区块摈除和显性数对',
     PuzzleDifficulty.medium => '加入数组、隐性数对和 X-Wing',
-    PuzzleDifficulty.hard => '需要 XY-Wing 等结构',
+    PuzzleDifficulty.hard => '需要摩天楼、双线风筝或 XY-Wing 等结构',
   };
 
   int get rank => index;
@@ -31,6 +31,8 @@ enum LogicalTechnique {
   hiddenPair,
   hiddenTriple,
   xWing,
+  skyscraper,
+  twoStringKite,
   xyWing,
 }
 
@@ -45,6 +47,8 @@ extension LogicalTechniqueInfo on LogicalTechnique {
     LogicalTechnique.hiddenPair => '隐性数对',
     LogicalTechnique.hiddenTriple => '隐性三数组',
     LogicalTechnique.xWing => 'X-Wing',
+    LogicalTechnique.skyscraper => '摩天楼',
+    LogicalTechnique.twoStringKite => '双线风筝',
     LogicalTechnique.xyWing => 'XY-Wing',
   };
 
@@ -58,6 +62,8 @@ extension LogicalTechniqueInfo on LogicalTechnique {
     LogicalTechnique.hiddenPair ||
     LogicalTechnique.hiddenTriple ||
     LogicalTechnique.xWing => PuzzleDifficulty.medium,
+    LogicalTechnique.skyscraper ||
+    LogicalTechnique.twoStringKite ||
     LogicalTechnique.xyWing => PuzzleDifficulty.hard,
   };
 }
@@ -76,6 +82,30 @@ class CandidateRef {
   int get hashCode => Object.hash(index, digit);
 }
 
+enum LogicalLinkStrength { strong, weak }
+
+class LogicalLink {
+  const LogicalLink({
+    required this.first,
+    required this.second,
+    required this.strength,
+  });
+
+  final CandidateRef first;
+  final CandidateRef second;
+  final LogicalLinkStrength strength;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LogicalLink &&
+      other.first == first &&
+      other.second == second &&
+      other.strength == strength;
+
+  @override
+  int get hashCode => Object.hash(first, second, strength);
+}
+
 class LogicalStep {
   const LogicalStep({
     required this.technique,
@@ -85,6 +115,7 @@ class LogicalStep {
     required this.explanation,
     this.placementIndex,
     this.placementDigit,
+    this.links = const [],
   });
 
   final LogicalTechnique technique;
@@ -92,6 +123,7 @@ class LogicalStep {
   final List<CandidateRef> eliminations;
   final int? placementIndex;
   final int? placementDigit;
+  final List<LogicalLink> links;
   final String focus;
   final String explanation;
 
@@ -186,10 +218,42 @@ class LogicalSolver {
     }
 
     if (maxDifficulty.rank >= PuzzleDifficulty.hard.rank) {
+      step = _findSkyscraper(masks);
+      if (step != null) return step;
+      step = _findTwoStringKite(masks);
+      if (step != null) return step;
       step = _findXYWing(values, masks);
       if (step != null) return step;
     }
     return null;
+  }
+
+  LogicalStep? findTechnique({
+    required List<int> values,
+    required List<int> excludedMasks,
+    required LogicalTechnique technique,
+  }) {
+    if (values.length != SudokuBoard.cellCount ||
+        excludedMasks.length != SudokuBoard.cellCount ||
+        engine.validate(values) != null) {
+      return null;
+    }
+    final masks = _candidateMasks(values, excludedMasks);
+    if (_hasEmptyCellWithoutCandidate(values, masks)) return null;
+    return switch (technique) {
+      LogicalTechnique.nakedSingle => _findNakedSingle(values, masks),
+      LogicalTechnique.hiddenSingle => _findHiddenSingle(values, masks),
+      LogicalTechnique.lockedPointing => _findLockedPointing(values, masks),
+      LogicalTechnique.lockedClaiming => _findLockedClaiming(values, masks),
+      LogicalTechnique.nakedPair => _findNakedSubset(values, masks, 2),
+      LogicalTechnique.nakedTriple => _findNakedSubset(values, masks, 3),
+      LogicalTechnique.hiddenPair => _findHiddenSubset(values, masks, 2),
+      LogicalTechnique.hiddenTriple => _findHiddenSubset(values, masks, 3),
+      LogicalTechnique.xWing => _findXWing(values, masks),
+      LogicalTechnique.skyscraper => _findSkyscraper(masks),
+      LogicalTechnique.twoStringKite => _findTwoStringKite(masks),
+      LogicalTechnique.xyWing => _findXYWing(values, masks),
+    };
   }
 
   LogicalSolveResult solve(
@@ -586,6 +650,192 @@ class LogicalSolver {
       }
     }
     return null;
+  }
+
+  LogicalStep? _findSkyscraper(List<int> masks) {
+    for (var digit = 1; digit <= 9; digit++) {
+      final bit = SudokuEngine.bitFor(digit);
+      for (var rowBased = 0; rowBased < 2; rowBased++) {
+        final lines = rowBased == 0 ? SudokuEngine.rows : SudokuEngine.columns;
+        final conjugateLines = <int, List<int>>{};
+        for (var line = 0; line < 9; line++) {
+          final positions = [
+            for (final index in lines[line])
+              if ((masks[index] & bit) != 0) index,
+          ];
+          if (positions.length == 2) conjugateLines[line] = positions;
+        }
+
+        final lineNumbers = conjugateLines.keys.toList();
+        for (final pair in _combinations(lineNumbers, 2)) {
+          final firstPair = conjugateLines[pair[0]]!;
+          final secondPair = conjugateLines[pair[1]]!;
+          final commonCrossCoordinates = firstPair
+              .map((index) => rowBased == 0 ? index % 9 : index ~/ 9)
+              .toSet()
+              .intersection(
+                secondPair
+                    .map((index) => rowBased == 0 ? index % 9 : index ~/ 9)
+                    .toSet(),
+              );
+          if (commonCrossCoordinates.length != 1) continue;
+
+          final baseCoordinate = commonCrossCoordinates.single;
+          final firstBase = firstPair.singleWhere(
+            (index) =>
+                (rowBased == 0 ? index % 9 : index ~/ 9) == baseCoordinate,
+          );
+          final secondBase = secondPair.singleWhere(
+            (index) =>
+                (rowBased == 0 ? index % 9 : index ~/ 9) == baseCoordinate,
+          );
+          final firstRoof = firstPair.firstWhere((index) => index != firstBase);
+          final secondRoof = secondPair.firstWhere(
+            (index) => index != secondBase,
+          );
+          final patternIndices = {firstRoof, firstBase, secondBase, secondRoof};
+          final eliminations = _commonPeerEliminations(
+            masks: masks,
+            digit: digit,
+            first: firstRoof,
+            second: secondRoof,
+            excludedIndices: patternIndices,
+          );
+          if (eliminations.isEmpty) continue;
+
+          final lineName = rowBased == 0 ? '行' : '列';
+          final baseName = rowBased == 0 ? '列' : '行';
+          return LogicalStep(
+            technique: LogicalTechnique.skyscraper,
+            pattern: [
+              for (final index in patternIndices) CandidateRef(index, digit),
+            ],
+            eliminations: eliminations,
+            links: [
+              LogicalLink(
+                first: CandidateRef(firstRoof, digit),
+                second: CandidateRef(firstBase, digit),
+                strength: LogicalLinkStrength.strong,
+              ),
+              LogicalLink(
+                first: CandidateRef(firstBase, digit),
+                second: CandidateRef(secondBase, digit),
+                strength: LogicalLinkStrength.weak,
+              ),
+              LogicalLink(
+                first: CandidateRef(secondBase, digit),
+                second: CandidateRef(secondRoof, digit),
+                strength: LogicalLinkStrength.strong,
+              ),
+            ],
+            focus:
+                '观察第 ${pair[0] + 1}、${pair[1] + 1} $lineName中候选 $digit 的两组强链。',
+            explanation:
+                '两条$lineName的候选 $digit 各只剩两处，其中一端对齐在第 ${baseCoordinate + 1} $baseName，形成“强—弱—强”的摩天楼链。两个楼顶至少有一个为真，所以同时看到两个楼顶的格可删除 $digit。',
+          );
+        }
+      }
+    }
+    return null;
+  }
+
+  LogicalStep? _findTwoStringKite(List<int> masks) {
+    for (var digit = 1; digit <= 9; digit++) {
+      final bit = SudokuEngine.bitFor(digit);
+      final rowPairs = <int, List<int>>{};
+      final columnPairs = <int, List<int>>{};
+      for (var row = 0; row < 9; row++) {
+        final positions = [
+          for (final index in SudokuEngine.rows[row])
+            if ((masks[index] & bit) != 0) index,
+        ];
+        if (positions.length == 2) rowPairs[row] = positions;
+      }
+      for (var column = 0; column < 9; column++) {
+        final positions = [
+          for (final index in SudokuEngine.columns[column])
+            if ((masks[index] & bit) != 0) index,
+        ];
+        if (positions.length == 2) columnPairs[column] = positions;
+      }
+
+      for (final rowEntry in rowPairs.entries) {
+        for (final columnEntry in columnPairs.entries) {
+          for (final rowJoint in rowEntry.value) {
+            final rowTip = rowEntry.value.firstWhere(
+              (index) => index != rowJoint,
+            );
+            for (final columnJoint in columnEntry.value) {
+              final columnTip = columnEntry.value.firstWhere(
+                (index) => index != columnJoint,
+              );
+              final patternIndices = {rowTip, rowJoint, columnJoint, columnTip};
+              if (patternIndices.length != 4 ||
+                  _boxOf(rowJoint) != _boxOf(columnJoint)) {
+                continue;
+              }
+              final eliminations = _commonPeerEliminations(
+                masks: masks,
+                digit: digit,
+                first: rowTip,
+                second: columnTip,
+                excludedIndices: patternIndices,
+              );
+              if (eliminations.isEmpty) continue;
+
+              return LogicalStep(
+                technique: LogicalTechnique.twoStringKite,
+                pattern: [
+                  for (final index in patternIndices)
+                    CandidateRef(index, digit),
+                ],
+                eliminations: eliminations,
+                links: [
+                  LogicalLink(
+                    first: CandidateRef(rowTip, digit),
+                    second: CandidateRef(rowJoint, digit),
+                    strength: LogicalLinkStrength.strong,
+                  ),
+                  LogicalLink(
+                    first: CandidateRef(rowJoint, digit),
+                    second: CandidateRef(columnJoint, digit),
+                    strength: LogicalLinkStrength.weak,
+                  ),
+                  LogicalLink(
+                    first: CandidateRef(columnJoint, digit),
+                    second: CandidateRef(columnTip, digit),
+                    strength: LogicalLinkStrength.strong,
+                  ),
+                ],
+                focus:
+                    '观察第 ${rowEntry.key + 1} 行和第 ${columnEntry.key + 1} 列中候选 $digit 的强链。',
+                explanation:
+                    '第 ${rowEntry.key + 1} 行与第 ${columnEntry.key + 1} 列的 $digit 都各只剩两处，两条强链在第 ${_boxOf(rowJoint) + 1} 宫内以弱链衔接，形成双线风筝。两个风筝尖端至少有一个为真，因此同时看到两个尖端的格可删除 $digit。',
+              );
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  List<CandidateRef> _commonPeerEliminations({
+    required List<int> masks,
+    required int digit,
+    required int first,
+    required int second,
+    required Set<int> excludedIndices,
+  }) {
+    final bit = SudokuEngine.bitFor(digit);
+    return [
+      for (var index = 0; index < SudokuBoard.cellCount; index++)
+        if (!excludedIndices.contains(index) &&
+            (masks[index] & bit) != 0 &&
+            _arePeers(index, first) &&
+            _arePeers(index, second))
+          CandidateRef(index, digit),
+    ];
   }
 
   LogicalStep? _findXYWing(List<int> values, List<int> masks) {

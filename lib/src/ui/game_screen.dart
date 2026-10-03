@@ -285,6 +285,10 @@ class _HintPanel extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(explained ? step.explanation : step.focus),
+            if (explained && step.links.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _ChainLegend(colors: colors),
+            ],
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -305,6 +309,58 @@ class _HintPanel extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ChainLegend extends StatelessWidget {
+  const _ChainLegend({required this.colors});
+
+  final ColorScheme colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 16,
+      runSpacing: 6,
+      children: [
+        _LegendItem(color: colors.primary, label: '实线：强链'),
+        _LegendItem(color: colors.secondary, label: '虚线：弱链', dashed: true),
+        _LegendItem(color: colors.error, label: '红色：可删候选'),
+      ],
+    );
+  }
+}
+
+class _LegendItem extends StatelessWidget {
+  const _LegendItem({
+    required this.color,
+    required this.label,
+    this.dashed = false,
+  });
+
+  final Color color;
+  final String label;
+  final bool dashed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 25,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              for (var index = 0; index < (dashed ? 3 : 1); index++)
+                Container(width: dashed ? 6 : 25, height: 2.5, color: color),
+            ],
+          ),
+        ),
+        const SizedBox(width: 5),
+        Text(label, style: Theme.of(context).textTheme.labelMedium),
+      ],
     );
   }
 }

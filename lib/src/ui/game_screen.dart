@@ -298,6 +298,56 @@ class _HintPanel extends StatelessWidget {
             const SizedBox(height: 8),
             Text(explained ? step.explanation : step.focus),
             if (explained &&
+                (step.chainNodes.isNotEmpty || step.chainCells.isNotEmpty)) ...[
+              const SizedBox(height: 10),
+              Text(
+                '链条顺序',
+                style: Theme.of(context).textTheme.labelLarge
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  if (step.chainNodes.isNotEmpty)
+                    for (var index = 0; index < step.chainNodes.length; index++)
+                      Chip(
+                        visualDensity: VisualDensity.compact,
+                        label: Text(
+                          '${index + 1}  (${step.chainNodes[index].digit})r${step.chainNodes[index].index ~/ 9 + 1}c${step.chainNodes[index].index % 9 + 1}',
+                        ),
+                      )
+                  else
+                    for (var index = 0; index < step.chainCells.length; index++)
+                      Chip(
+                        visualDensity: VisualDensity.compact,
+                        label: Text(
+                          '${index + 1}  r${step.chainCells[index] ~/ 9 + 1}c${step.chainCells[index] % 9 + 1}',
+                        ),
+                      ),
+                ],
+              ),
+            ],
+            if (explained && step.links.any((link) => link.reason != null)) ...[
+              const SizedBox(height: 10),
+              Text(
+                '连接依据',
+                style: Theme.of(context).textTheme.labelLarge
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              for (var index = 0; index < step.links.length; index++)
+                if (step.links[index].reason case final reason?)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 3),
+                    child: Text(
+                      '${index + 1}. ${step.links[index].strength == LogicalLinkStrength.strong ? '强链' : '弱链'} · $reason',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+            ],
+            if (explained &&
                 (step.links.isNotEmpty || step.groupLinks.isNotEmpty)) ...[
               const SizedBox(height: 10),
               _ChainLegend(colors: colors),

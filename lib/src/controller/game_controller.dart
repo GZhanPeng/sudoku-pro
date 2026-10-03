@@ -192,6 +192,9 @@ class GameController extends ChangeNotifier {
   List<LogicalGroupLink> get hintGroupLinks =>
       hintLevel >= 2 ? hintStep?.groupLinks ?? const [] : const [];
 
+  List<int> get hintChainCells =>
+      hintLevel >= 2 ? hintStep?.chainCells ?? const [] : const [];
+
   bool isPeerOfSelected(int index) {
     final selected = selectedIndex;
     if (selected == null || selected == index) return false;

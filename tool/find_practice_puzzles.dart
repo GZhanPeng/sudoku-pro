@@ -10,11 +10,20 @@ void main(List<String> arguments) {
   const solver = LogicalSolver();
   final targets = <LogicalTechnique>{
     LogicalTechnique.xWing,
+    LogicalTechnique.swordfish,
+    LogicalTechnique.jellyfish,
+    LogicalTechnique.finnedXWing,
+    LogicalTechnique.uniqueRectangleType1,
+    LogicalTechnique.bugPlusOne,
     LogicalTechnique.skyscraper,
     LogicalTechnique.twoStringKite,
     LogicalTechnique.emptyRectangle,
     LogicalTechnique.wWing,
     LogicalTechnique.xyWing,
+    LogicalTechnique.xyzWing,
+    LogicalTechnique.xyChain,
+    LogicalTechnique.aic,
+    LogicalTechnique.aicType2,
   };
   final found = <LogicalTechnique>{};
 

@@ -20,7 +20,7 @@ const practicePuzzles = <PracticePuzzle>[
   ),
   PracticePuzzle(
     technique: LogicalTechnique.skyscraper,
-    puzzle: '710400000009300060005092000001000020002000600040000103000280700090001400000005089',
+    puzzle: '302000000700000406000071230000004000190000360000800050071540000005000027000000003',
     summary: '寻找两条强链共用一端、另一端错开的“屋顶”。',
   ),
   PracticePuzzle(

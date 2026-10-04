@@ -1,7 +1,7 @@
 import '../model/sudoku_board.dart';
 import 'sudoku_engine.dart';
 
-enum PuzzleDifficulty { beginner, easy, medium, hard }
+enum PuzzleDifficulty { beginner, easy, medium, hard, expert, master }
 
 extension PuzzleDifficultyInfo on PuzzleDifficulty {
   String get label => switch (this) {
@@ -9,13 +9,17 @@ extension PuzzleDifficultyInfo on PuzzleDifficulty {
     PuzzleDifficulty.easy => '简单',
     PuzzleDifficulty.medium => '中等',
     PuzzleDifficulty.hard => '困难',
+    PuzzleDifficulty.expert => '专家',
+    PuzzleDifficulty.master => '骨灰',
   };
 
   String get description => switch (this) {
     PuzzleDifficulty.beginner => '唯余与宫行列摈除',
     PuzzleDifficulty.easy => '加入区块摈除和显性数对',
-    PuzzleDifficulty.medium => '加入四数组和 Swordfish 等结构',
-    PuzzleDifficulty.hard => '加入复杂鱼、翼、短链和分组结构',
+    PuzzleDifficulty.medium => '加入二至四数组和 X-Wing',
+    PuzzleDifficulty.hard => '加入 Swordfish、翼和典型短链',
+    PuzzleDifficulty.expert => '加入复杂鱼、染色和 XY-Chain',
+    PuzzleDifficulty.master => '需要 AIC 交替推理链',
   };
 
   int get rank => index;
@@ -37,6 +41,8 @@ enum LogicalTechnique {
   jellyfish,
   finnedXWing,
   uniqueRectangleType1,
+  uniqueRectangleType2,
+  uniqueRectangleType4,
   bugPlusOne,
   skyscraper,
   twoStringKite,
@@ -44,6 +50,8 @@ enum LogicalTechnique {
   wWing,
   xyWing,
   xyzWing,
+  simpleColoringWrap,
+  simpleColoringTrap,
   xyChain,
   aic,
   aicType2,
@@ -66,6 +74,8 @@ extension LogicalTechniqueInfo on LogicalTechnique {
     LogicalTechnique.jellyfish => 'Jellyfish',
     LogicalTechnique.finnedXWing => 'Finned X-Wing',
     LogicalTechnique.uniqueRectangleType1 => '唯一矩形 Type 1',
+    LogicalTechnique.uniqueRectangleType2 => '唯一矩形 Type 2',
+    LogicalTechnique.uniqueRectangleType4 => '唯一矩形 Type 4',
     LogicalTechnique.bugPlusOne => 'BUG+1',
     LogicalTechnique.skyscraper => '摩天楼',
     LogicalTechnique.twoStringKite => '双线风筝',
@@ -73,6 +83,8 @@ extension LogicalTechniqueInfo on LogicalTechnique {
     LogicalTechnique.wWing => 'W-Wing',
     LogicalTechnique.xyWing => 'XY-Wing',
     LogicalTechnique.xyzWing => 'XYZ-Wing',
+    LogicalTechnique.simpleColoringWrap => '简单染色·同色矛盾',
+    LogicalTechnique.simpleColoringTrap => '简单染色·双色夹击',
     LogicalTechnique.xyChain => 'XY-Chain',
     LogicalTechnique.aic => 'AIC Type 1',
     LogicalTechnique.aicType2 => 'AIC Type 2',
@@ -89,21 +101,25 @@ extension LogicalTechniqueInfo on LogicalTechnique {
     LogicalTechnique.hiddenPair ||
     LogicalTechnique.hiddenTriple ||
     LogicalTechnique.hiddenQuad ||
-    LogicalTechnique.xWing ||
-    LogicalTechnique.swordfish => PuzzleDifficulty.medium,
-    LogicalTechnique.jellyfish ||
-    LogicalTechnique.finnedXWing ||
+    LogicalTechnique.xWing => PuzzleDifficulty.medium,
+    LogicalTechnique.swordfish ||
     LogicalTechnique.uniqueRectangleType1 ||
+    LogicalTechnique.uniqueRectangleType2 ||
+    LogicalTechnique.uniqueRectangleType4 ||
     LogicalTechnique.bugPlusOne ||
     LogicalTechnique.skyscraper ||
     LogicalTechnique.twoStringKite ||
     LogicalTechnique.emptyRectangle ||
     LogicalTechnique.wWing ||
     LogicalTechnique.xyWing ||
-    LogicalTechnique.xyzWing ||
-    LogicalTechnique.xyChain ||
+    LogicalTechnique.xyzWing => PuzzleDifficulty.hard,
+    LogicalTechnique.jellyfish ||
+    LogicalTechnique.finnedXWing ||
+    LogicalTechnique.simpleColoringWrap ||
+    LogicalTechnique.simpleColoringTrap ||
+    LogicalTechnique.xyChain => PuzzleDifficulty.expert,
     LogicalTechnique.aic ||
-    LogicalTechnique.aicType2 => PuzzleDifficulty.hard,
+    LogicalTechnique.aicType2 => PuzzleDifficulty.master,
   };
 }
 
@@ -241,7 +257,7 @@ class LogicalSolver {
   LogicalStep? findNext({
     required List<int> values,
     required List<int> excludedMasks,
-    PuzzleDifficulty maxDifficulty = PuzzleDifficulty.hard,
+    PuzzleDifficulty maxDifficulty = PuzzleDifficulty.master,
   }) {
     if (values.length != SudokuBoard.cellCount ||
         excludedMasks.length != SudokuBoard.cellCount ||
@@ -279,16 +295,16 @@ class LogicalSolver {
       if (step != null) return step;
       step = _findBasicFish(masks, 2);
       if (step != null) return step;
-      step = _findBasicFish(masks, 3);
-      if (step != null) return step;
     }
 
     if (maxDifficulty.rank >= PuzzleDifficulty.hard.rank) {
-      step = _findBasicFish(masks, 4);
-      if (step != null) return step;
-      step = _findFinnedXWing(masks);
+      step = _findBasicFish(masks, 3);
       if (step != null) return step;
       step = _findUniqueRectangleType1(masks);
+      if (step != null) return step;
+      step = _findUniqueRectangleType2(masks);
+      if (step != null) return step;
+      step = _findUniqueRectangleType4(masks);
       if (step != null) return step;
       step = _findBugPlusOne(masks);
       if (step != null) return step;
@@ -304,8 +320,22 @@ class LogicalSolver {
       if (step != null) return step;
       step = _findXYZWing(values, masks);
       if (step != null) return step;
+    }
+
+    if (maxDifficulty.rank >= PuzzleDifficulty.expert.rank) {
+      step = _findBasicFish(masks, 4);
+      if (step != null) return step;
+      step = _findFinnedXWing(masks);
+      if (step != null) return step;
+      step = _findSimpleColoring(masks, wrap: true);
+      if (step != null) return step;
+      step = _findSimpleColoring(masks, wrap: false);
+      if (step != null) return step;
       step = _findXYChain(values, masks);
       if (step != null) return step;
+    }
+
+    if (maxDifficulty.rank >= PuzzleDifficulty.master.rank) {
       step = _findAIC(masks);
       if (step != null) return step;
       step = _findAIC(masks, type2: true);
@@ -342,6 +372,8 @@ class LogicalSolver {
       LogicalTechnique.jellyfish => _findBasicFish(masks, 4),
       LogicalTechnique.finnedXWing => _findFinnedXWing(masks),
       LogicalTechnique.uniqueRectangleType1 => _findUniqueRectangleType1(masks),
+      LogicalTechnique.uniqueRectangleType2 => _findUniqueRectangleType2(masks),
+      LogicalTechnique.uniqueRectangleType4 => _findUniqueRectangleType4(masks),
       LogicalTechnique.bugPlusOne => _findBugPlusOne(masks),
       LogicalTechnique.skyscraper => _findSkyscraper(masks),
       LogicalTechnique.twoStringKite => _findTwoStringKite(masks),
@@ -349,6 +381,14 @@ class LogicalSolver {
       LogicalTechnique.wWing => _findWWing(masks),
       LogicalTechnique.xyWing => _findXYWing(values, masks),
       LogicalTechnique.xyzWing => _findXYZWing(values, masks),
+      LogicalTechnique.simpleColoringWrap => _findSimpleColoring(
+        masks,
+        wrap: true,
+      ),
+      LogicalTechnique.simpleColoringTrap => _findSimpleColoring(
+        masks,
+        wrap: false,
+      ),
       LogicalTechnique.xyChain => _findXYChain(values, masks),
       LogicalTechnique.aic => _findAIC(masks),
       LogicalTechnique.aicType2 => _findAIC(masks, type2: true),
@@ -357,7 +397,7 @@ class LogicalSolver {
 
   LogicalSolveResult solve(
     List<int> source, {
-    PuzzleDifficulty maxDifficulty = PuzzleDifficulty.hard,
+    PuzzleDifficulty maxDifficulty = PuzzleDifficulty.master,
     int maxSteps = 600,
   }) {
     final values = List<int>.of(source);
@@ -882,6 +922,160 @@ class LogicalSolver {
             explanation:
                 '其中三格都只含 ${pairDigits.join('/')}。若第四格也取这两个数之一，四角会形成可互换的双解矩形；题目已验证唯一解，因此 ${_cellCoordinate(extraCell)} 必须使用额外候选，可以删除 ${pairDigits.join('、')}。',
           );
+        }
+      }
+    }
+    return null;
+  }
+
+  LogicalStep? _findUniqueRectangleType2(List<int> masks) {
+    for (final rows in _combinations(
+      List<int>.generate(9, (index) => index),
+      2,
+    )) {
+      for (final columns in _combinations(
+        List<int>.generate(9, (index) => index),
+        2,
+      )) {
+        final cells = [
+          rows[0] * 9 + columns[0],
+          rows[0] * 9 + columns[1],
+          rows[1] * 9 + columns[0],
+          rows[1] * 9 + columns[1],
+        ];
+        if (cells.map(_boxOf).toSet().length != 2 ||
+            cells.any((index) => masks[index] == 0)) {
+          continue;
+        }
+
+        final sidePairs = <(List<int>, List<int>)>[
+          ([cells[0], cells[1]], [cells[2], cells[3]]),
+          ([cells[2], cells[3]], [cells[0], cells[1]]),
+          ([cells[0], cells[2]], [cells[1], cells[3]]),
+          ([cells[1], cells[3]], [cells[0], cells[2]]),
+        ];
+        for (final (floor, roof) in sidePairs) {
+          final pairMask = masks[floor.first];
+          if (SudokuEngine.countBits(pairMask) != 2 ||
+              masks[floor.last] != pairMask) {
+            continue;
+          }
+          final roofMask = masks[roof.first];
+          if (roofMask != masks[roof.last] ||
+              SudokuEngine.countBits(roofMask) != 3 ||
+              (roofMask & pairMask) != pairMask) {
+            continue;
+          }
+          final extraDigit = SudokuEngine.singleDigit(roofMask & ~pairMask);
+          final eliminations = _commonPeerEliminations(
+            masks: masks,
+            digit: extraDigit,
+            first: roof.first,
+            second: roof.last,
+            excludedIndices: cells.toSet(),
+          );
+          if (eliminations.isEmpty) continue;
+
+          final pairDigits = SudokuEngine.digitsInMask(pairMask);
+          return LogicalStep(
+            technique: LogicalTechnique.uniqueRectangleType2,
+            pattern: [
+              for (final index in cells)
+                for (final digit in SudokuEngine.digitsInMask(masks[index]))
+                  CandidateRef(index, digit),
+            ],
+            eliminations: eliminations,
+            focus:
+                '观察 ${cells.map(_cellCoordinate).join('、')} 中带有共同额外候选 $extraDigit 的两个顶格。',
+            explanation:
+                '矩形底边两格都只含 ${pairDigits.join('/')}，顶边两格都是 ${pairDigits.join('/')}+$extraDigit。为避免四角落入可互换的双解矩形，两个顶格至少一格必须取 $extraDigit，因此同时看到它们的格可删除 $extraDigit。',
+          );
+        }
+      }
+    }
+    return null;
+  }
+
+  LogicalStep? _findUniqueRectangleType4(List<int> masks) {
+    for (final rows in _combinations(
+      List<int>.generate(9, (index) => index),
+      2,
+    )) {
+      for (final columns in _combinations(
+        List<int>.generate(9, (index) => index),
+        2,
+      )) {
+        final cells = [
+          rows[0] * 9 + columns[0],
+          rows[0] * 9 + columns[1],
+          rows[1] * 9 + columns[0],
+          rows[1] * 9 + columns[1],
+        ];
+        if (cells.map(_boxOf).toSet().length != 2 ||
+            cells.any((index) => masks[index] == 0)) {
+          continue;
+        }
+
+        final sidePairs = <(List<int>, List<int>)>[
+          ([cells[0], cells[1]], [cells[2], cells[3]]),
+          ([cells[2], cells[3]], [cells[0], cells[1]]),
+          ([cells[0], cells[2]], [cells[1], cells[3]]),
+          ([cells[1], cells[3]], [cells[0], cells[2]]),
+        ];
+        for (final (floor, roof) in sidePairs) {
+          final pairMask = masks[floor.first];
+          if (SudokuEngine.countBits(pairMask) != 2 ||
+              masks[floor.last] != pairMask ||
+              roof.any((index) => (masks[index] & pairMask) != pairMask) ||
+              roof.every((index) => masks[index] == pairMask)) {
+            continue;
+          }
+          final roofUnit = roof.first ~/ 9 == roof.last ~/ 9
+              ? SudokuEngine.rows[roof.first ~/ 9]
+              : SudokuEngine.columns[roof.first % 9];
+          final pairDigits = SudokuEngine.digitsInMask(pairMask);
+          for (final strongDigit in pairDigits) {
+            final strongBit = SudokuEngine.bitFor(strongDigit);
+            final strongPositions = [
+              for (final index in roofUnit)
+                if ((masks[index] & strongBit) != 0) index,
+            ];
+            if (strongPositions.length != 2 ||
+                strongPositions.toSet().difference(roof.toSet()).isNotEmpty) {
+              continue;
+            }
+            final removeDigit = pairDigits.firstWhere(
+              (digit) => digit != strongDigit,
+            );
+            final eliminations = [
+              for (final index in roof)
+                if ((masks[index] & SudokuEngine.bitFor(removeDigit)) != 0)
+                  CandidateRef(index, removeDigit),
+            ];
+            if (eliminations.isEmpty) continue;
+
+            return LogicalStep(
+              technique: LogicalTechnique.uniqueRectangleType4,
+              pattern: [
+                for (final index in cells)
+                  for (final digit in SudokuEngine.digitsInMask(masks[index]))
+                    CandidateRef(index, digit),
+              ],
+              eliminations: eliminations,
+              links: [
+                LogicalLink(
+                  first: CandidateRef(roof.first, strongDigit),
+                  second: CandidateRef(roof.last, strongDigit),
+                  strength: LogicalLinkStrength.strong,
+                  reason: '该行或列的候选 $strongDigit 只剩这两处',
+                ),
+              ],
+              focus:
+                  '观察 ${cells.map(_cellCoordinate).join('、')} 的唯一矩形，以及顶格之间的候选 $strongDigit 强链。',
+              explanation:
+                  '两个顶格中的 $strongDigit 在所在行或列形成强链，必有一格取 $strongDigit。若另一个矩形候选 $removeDigit 也留在顶格，会允许四角构成可互换的双解，因此两个顶格都可删除 $removeDigit。',
+            );
+          }
         }
       }
     }
@@ -1533,6 +1727,127 @@ class LogicalSolver {
           focus: '以 ${_cellLabel(pivot)} 的三候选格为枢纽，观察两个高亮双值翼。',
           explanation:
               '枢纽格包含 ${pivotDigits.join('/')}，两翼分别位于 ${_cellLabel(first)} 和 ${_cellLabel(second)}，三格无论如何至少有一格为 $z；同时看到枢纽和两翼的格可以删除候选 $z。',
+        );
+      }
+    }
+    return null;
+  }
+
+  LogicalStep? _findSimpleColoring(List<int> masks, {required bool wrap}) {
+    for (var digit = 1; digit <= 9; digit++) {
+      final bit = SudokuEngine.bitFor(digit);
+      final graph = <int, Set<int>>{};
+      for (final unit in SudokuEngine.allUnits) {
+        final positions = [
+          for (final index in unit)
+            if ((masks[index] & bit) != 0) index,
+        ];
+        if (positions.length != 2) continue;
+        graph.putIfAbsent(positions[0], () => <int>{}).add(positions[1]);
+        graph.putIfAbsent(positions[1], () => <int>{}).add(positions[0]);
+      }
+
+      final visited = <int>{};
+      for (final start in graph.keys) {
+        if (!visited.add(start)) continue;
+        final colors = <int, int>{start: 0};
+        final queue = <int>[start];
+        for (var cursor = 0; cursor < queue.length; cursor++) {
+          final current = queue[cursor];
+          for (final next in graph[current] ?? const <int>{}) {
+            if (!colors.containsKey(next)) {
+              colors[next] = 1 - colors[current]!;
+              visited.add(next);
+              queue.add(next);
+            }
+          }
+        }
+        if (colors.length < 3) continue;
+
+        final component = colors.keys.toSet();
+        final links = <LogicalLink>[];
+        final linkedPairs = <(int, int)>{};
+        for (final first in component) {
+          for (final second in graph[first] ?? const <int>{}) {
+            if (!component.contains(second)) continue;
+            final low = first < second ? first : second;
+            final high = first < second ? second : first;
+            if (!linkedPairs.add((low, high))) continue;
+            links.add(
+              LogicalLink(
+                first: CandidateRef(first, digit),
+                second: CandidateRef(second, digit),
+                strength: LogicalLinkStrength.strong,
+                reason: '候选 $digit 在该行、列或宫内只剩这两处',
+              ),
+            );
+          }
+        }
+
+        if (wrap) {
+          int? falseColor;
+          List<int>? conflict;
+          final nodes = component.toList();
+          for (
+            var first = 0;
+            first < nodes.length && conflict == null;
+            first++
+          ) {
+            for (var second = first + 1; second < nodes.length; second++) {
+              if (colors[nodes[first]] == colors[nodes[second]] &&
+                  _arePeers(nodes[first], nodes[second])) {
+                falseColor = colors[nodes[first]];
+                conflict = [nodes[first], nodes[second]];
+                break;
+              }
+            }
+          }
+          if (conflict == null) continue;
+          final eliminations = [
+            for (final entry in colors.entries)
+              if (entry.value == falseColor) CandidateRef(entry.key, digit),
+          ];
+          return LogicalStep(
+            technique: LogicalTechnique.simpleColoringWrap,
+            pattern: [
+              for (final index in component) CandidateRef(index, digit),
+            ],
+            eliminations: eliminations,
+            links: links,
+            chainCells: component.toList(),
+            focus:
+                '沿候选 $digit 的强链交替染两色，观察 ${conflict.map(_cellCoordinate).join('、')}。',
+            explanation:
+                '这两格被染成同一色，却处于同一行、列或宫，不可能同时为真。因此该颜色整体为假，所有同色格都可删除候选 $digit。',
+          );
+        }
+
+        final colorZero = [
+          for (final entry in colors.entries)
+            if (entry.value == 0) entry.key,
+        ];
+        final colorOne = [
+          for (final entry in colors.entries)
+            if (entry.value == 1) entry.key,
+        ];
+        final eliminations = <CandidateRef>[];
+        for (var index = 0; index < SudokuBoard.cellCount; index++) {
+          if (component.contains(index) || (masks[index] & bit) == 0) continue;
+          if (colorZero.any((node) => _arePeers(index, node)) &&
+              colorOne.any((node) => _arePeers(index, node))) {
+            eliminations.add(CandidateRef(index, digit));
+          }
+        }
+        if (eliminations.isEmpty) continue;
+        return LogicalStep(
+          technique: LogicalTechnique.simpleColoringTrap,
+          pattern: [for (final index in component) CandidateRef(index, digit)],
+          eliminations: eliminations,
+          links: links,
+          chainCells: component.toList(),
+          focus: '沿候选 $digit 的强链交替染两色，再查找同时看到两种颜色的格。',
+          explanation:
+              '强链两端必有一端成立，所以这个连通链的两种颜色必有一色为真。被高亮删除的格同时看到两种颜色，无论哪色为真都不能取 $digit。',
         );
       }
     }

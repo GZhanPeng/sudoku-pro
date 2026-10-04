@@ -199,7 +199,9 @@ class PuzzleGenerator {
       PuzzleDifficulty.beginner => (40, 46),
       PuzzleDifficulty.easy => (33, 39),
       PuzzleDifficulty.medium => (27, 33),
-      PuzzleDifficulty.hard => (22, 28),
+      PuzzleDifficulty.hard => (24, 30),
+      PuzzleDifficulty.expert => (22, 28),
+      PuzzleDifficulty.master => (21, 27),
     };
     return range.$1 + random.nextInt(range.$2 - range.$1 + 1);
   }
@@ -209,5 +211,7 @@ class PuzzleGenerator {
     PuzzleDifficulty.easy: '009760304670003000040100006056004009092000430400900650800001060000400012901057800',
     PuzzleDifficulty.medium: '007200000050000008008900140095000006020705080800000970084002700100000050000009860',
     PuzzleDifficulty.hard: '010004690098500200000000000006085000005000740000740900000000000001007460069800020',
+    PuzzleDifficulty.expert: '700060009000900500000050040090200006075000300004003020060010000007004000300020064',
+    PuzzleDifficulty.master: '080050300070028000900003006050000020700000009020000030300200054000130000008009010',
   };
 }

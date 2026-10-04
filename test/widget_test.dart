@@ -105,7 +105,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('new puzzle offers four human-logic difficulty levels', (
+  testWidgets('new puzzle offers six human-logic difficulty levels', (
     tester,
   ) async {
     await tester.pumpWidget(const SudokuHelperApp());
@@ -117,5 +117,7 @@ void main() {
     expect(find.text('简单'), findsOneWidget);
     expect(find.text('中等'), findsOneWidget);
     expect(find.text('困难'), findsOneWidget);
+    expect(find.text('专家'), findsOneWidget);
+    expect(find.text('骨灰'), findsOneWidget);
   });
 }

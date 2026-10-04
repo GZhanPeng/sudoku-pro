@@ -14,6 +14,8 @@ void main(List<String> arguments) {
     LogicalTechnique.jellyfish,
     LogicalTechnique.finnedXWing,
     LogicalTechnique.uniqueRectangleType1,
+    LogicalTechnique.uniqueRectangleType2,
+    LogicalTechnique.uniqueRectangleType4,
     LogicalTechnique.bugPlusOne,
     LogicalTechnique.skyscraper,
     LogicalTechnique.twoStringKite,
@@ -21,6 +23,8 @@ void main(List<String> arguments) {
     LogicalTechnique.wWing,
     LogicalTechnique.xyWing,
     LogicalTechnique.xyzWing,
+    LogicalTechnique.simpleColoringWrap,
+    LogicalTechnique.simpleColoringTrap,
     LogicalTechnique.xyChain,
     LogicalTechnique.aic,
     LogicalTechnique.aicType2,
@@ -28,7 +32,12 @@ void main(List<String> arguments) {
   final found = <LogicalTechnique>{};
 
   for (var seed = startSeed; seed < startSeed + limit; seed++) {
-    for (final difficulty in [PuzzleDifficulty.medium, PuzzleDifficulty.hard]) {
+    for (final difficulty in [
+      PuzzleDifficulty.medium,
+      PuzzleDifficulty.hard,
+      PuzzleDifficulty.expert,
+      PuzzleDifficulty.master,
+    ]) {
       final generated = generator.generate(difficulty, seed: seed);
       final result = solver.solve(generated.puzzle.values);
       for (final target in targets.difference(found)) {

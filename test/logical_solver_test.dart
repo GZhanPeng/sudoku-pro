@@ -42,6 +42,15 @@ void main() {
   const engine = SudokuEngine();
   const generator = PuzzleGenerator();
 
+  test('legacy difficulty indexes stay compatible with saved games', () {
+    expect(PuzzleDifficulty.beginner.index, 0);
+    expect(PuzzleDifficulty.easy.index, 1);
+    expect(PuzzleDifficulty.medium.index, 2);
+    expect(PuzzleDifficulty.hard.index, 3);
+    expect(PuzzleDifficulty.expert.index, 4);
+    expect(PuzzleDifficulty.master.index, 5);
+  });
+
   test('logical solver completes an entry puzzle using only singles', () {
     final result = logicalSolver.solve(SudokuBoard.parse(easyBySingles).values);
 
@@ -76,6 +85,20 @@ void main() {
       );
     }
   });
+
+  for (final difficulty in PuzzleDifficulty.values) {
+    test('${difficulty.label} keeps an exact-rated fallback puzzle', () {
+      final generated = generator.generate(
+        difficulty,
+        seed: 20261004 + difficulty.index,
+        maxAttempts: 0,
+      );
+      final result = logicalSolver.solve(generated.puzzle.values);
+
+      expect(result.solved, isTrue, reason: difficulty.label);
+      expect(result.hardestDifficulty, difficulty, reason: difficulty.label);
+    });
+  }
 
   test('hard puzzle includes an explainable advanced structure', () {
     final generated = generator.generate(PuzzleDifficulty.hard, seed: 20260932);
@@ -196,6 +219,36 @@ void main() {
     });
   });
 
+  test('unique rectangle type 2 removes the shared roof candidate', () {
+    final state = _uniqueRectangleType2State();
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.uniqueRectangleType2,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.uniqueRectangleType2);
+    expect(step.eliminations, contains(const CandidateRef(10, 3)));
+  });
+
+  test('unique rectangle type 4 uses the roof strong link', () {
+    final state = _uniqueRectangleType4State();
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.uniqueRectangleType4,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.uniqueRectangleType4);
+    expect(step.eliminations, {
+      const CandidateRef(9, 2),
+      const CandidateRef(12, 2),
+    });
+    expect(step.links.single.strength, LogicalLinkStrength.strong);
+  });
+
   test('BUG+1 places the only additional candidate', () {
     final state = _bugPlusOneState();
     final step = logicalSolver.findTechnique(
@@ -227,6 +280,37 @@ void main() {
     });
     expect(step.eliminations, contains(const CandidateRef(22, 3)));
   });
+
+  test('simple coloring trap removes a candidate seeing both colors', () {
+    final state = _simpleColoringTrapState();
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.simpleColoringTrap,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.simpleColoringTrap);
+    expect(step.eliminations, contains(const CandidateRef(3, 9)));
+    expect(step.links, hasLength(3));
+  });
+
+  test(
+    'simple coloring wrap removes every candidate of a conflicting color',
+    () {
+      final state = _simpleColoringWrapState();
+      final step = logicalSolver.findTechnique(
+        values: state.values,
+        excludedMasks: state.excludedMasks,
+        technique: LogicalTechnique.simpleColoringWrap,
+      );
+
+      expect(step, isNotNull);
+      expect(step!.technique, LogicalTechnique.simpleColoringWrap);
+      expect(step.eliminations.map((item) => item.index).toSet(), {0, 10, 30});
+      expect(step.links, hasLength(4));
+    },
+  );
 
   test('skyscraper exposes a strong-weak-strong chain', () {
     final state = _syntheticChainState();
@@ -476,6 +560,55 @@ void main() {
   }
   final extraMask = pairMask | SudokuEngine.bitFor(3);
   excludedMasks[28] = SudokuEngine.fullMask & ~extraMask;
+  return (values: List<int>.filled(81, 0), excludedMasks: excludedMasks);
+}
+
+({List<int> values, List<int> excludedMasks}) _uniqueRectangleType2State() {
+  final excludedMasks = List<int>.filled(81, 0);
+  final pairMask = SudokuEngine.bitFor(1) | SudokuEngine.bitFor(2);
+  for (final index in [0, 3]) {
+    excludedMasks[index] = SudokuEngine.fullMask & ~pairMask;
+  }
+  final roofMask = pairMask | SudokuEngine.bitFor(3);
+  for (final index in [9, 12]) {
+    excludedMasks[index] = SudokuEngine.fullMask & ~roofMask;
+  }
+  return (values: List<int>.filled(81, 0), excludedMasks: excludedMasks);
+}
+
+({List<int> values, List<int> excludedMasks}) _uniqueRectangleType4State() {
+  final excludedMasks = List<int>.filled(81, 0);
+  final pairMask = SudokuEngine.bitFor(1) | SudokuEngine.bitFor(2);
+  for (final index in [0, 3]) {
+    excludedMasks[index] = SudokuEngine.fullMask & ~pairMask;
+  }
+  excludedMasks[9] =
+      SudokuEngine.fullMask & ~(pairMask | SudokuEngine.bitFor(3));
+  excludedMasks[12] =
+      SudokuEngine.fullMask & ~(pairMask | SudokuEngine.bitFor(4));
+  for (final index in SudokuEngine.rows[1]) {
+    if (index != 9 && index != 12) {
+      excludedMasks[index] |= SudokuEngine.bitFor(1);
+    }
+  }
+  return (values: List<int>.filled(81, 0), excludedMasks: excludedMasks);
+}
+
+({List<int> values, List<int> excludedMasks}) _simpleColoringTrapState() {
+  const allowedNines = {0, 1, 3, 28, 30, 66};
+  final excludedMasks = List<int>.generate(
+    81,
+    (index) => allowedNines.contains(index) ? 0 : SudokuEngine.bitFor(9),
+  );
+  return (values: List<int>.filled(81, 0), excludedMasks: excludedMasks);
+}
+
+({List<int> values, List<int> excludedMasks}) _simpleColoringWrapState() {
+  const allowedNines = {0, 3, 10, 20, 28, 30};
+  final excludedMasks = List<int>.generate(
+    81,
+    (index) => allowedNines.contains(index) ? 0 : SudokuEngine.bitFor(9),
+  );
   return (values: List<int>.filled(81, 0), excludedMasks: excludedMasks);
 }
 

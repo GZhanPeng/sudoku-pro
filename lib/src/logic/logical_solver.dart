@@ -18,8 +18,8 @@ extension PuzzleDifficultyInfo on PuzzleDifficulty {
     PuzzleDifficulty.easy => '加入区块摈除和显性数对',
     PuzzleDifficulty.medium => '加入二至四数组和 X-Wing',
     PuzzleDifficulty.hard => '加入 Swordfish、翼和典型短链',
-    PuzzleDifficulty.expert => '加入复杂鱼、染色和 XY-Chain',
-    PuzzleDifficulty.master => '需要 AIC 交替推理链',
+    PuzzleDifficulty.expert => '加入复杂鱼、染色和 X/XY-Chain',
+    PuzzleDifficulty.master => '需要 X-Cycle、Nice Loop 或 AIC',
   };
 
   int get rank => index;
@@ -42,6 +42,7 @@ enum LogicalTechnique {
   finnedXWing,
   uniqueRectangleType1,
   uniqueRectangleType2,
+  uniqueRectangleType3,
   uniqueRectangleType4,
   bugPlusOne,
   skyscraper,
@@ -52,7 +53,12 @@ enum LogicalTechnique {
   xyzWing,
   simpleColoringWrap,
   simpleColoringTrap,
+  xChain,
+  remotePair,
   xyChain,
+  xCycle,
+  discontinuousNiceLoop,
+  continuousNiceLoop,
   aic,
   aicType2,
 }
@@ -75,6 +81,7 @@ extension LogicalTechniqueInfo on LogicalTechnique {
     LogicalTechnique.finnedXWing => 'Finned X-Wing',
     LogicalTechnique.uniqueRectangleType1 => '唯一矩形 Type 1',
     LogicalTechnique.uniqueRectangleType2 => '唯一矩形 Type 2',
+    LogicalTechnique.uniqueRectangleType3 => '唯一矩形 Type 3',
     LogicalTechnique.uniqueRectangleType4 => '唯一矩形 Type 4',
     LogicalTechnique.bugPlusOne => 'BUG+1',
     LogicalTechnique.skyscraper => '摩天楼',
@@ -85,7 +92,12 @@ extension LogicalTechniqueInfo on LogicalTechnique {
     LogicalTechnique.xyzWing => 'XYZ-Wing',
     LogicalTechnique.simpleColoringWrap => '简单染色·同色矛盾',
     LogicalTechnique.simpleColoringTrap => '简单染色·双色夹击',
+    LogicalTechnique.xChain => 'X-Chain',
+    LogicalTechnique.remotePair => 'Remote Pairs',
     LogicalTechnique.xyChain => 'XY-Chain',
+    LogicalTechnique.xCycle => 'X-Cycle',
+    LogicalTechnique.discontinuousNiceLoop => '不连续 Nice Loop',
+    LogicalTechnique.continuousNiceLoop => '连续 Nice Loop',
     LogicalTechnique.aic => 'AIC Type 1',
     LogicalTechnique.aicType2 => 'AIC Type 2',
   };
@@ -105,6 +117,7 @@ extension LogicalTechniqueInfo on LogicalTechnique {
     LogicalTechnique.swordfish ||
     LogicalTechnique.uniqueRectangleType1 ||
     LogicalTechnique.uniqueRectangleType2 ||
+    LogicalTechnique.uniqueRectangleType3 ||
     LogicalTechnique.uniqueRectangleType4 ||
     LogicalTechnique.bugPlusOne ||
     LogicalTechnique.skyscraper ||
@@ -117,7 +130,12 @@ extension LogicalTechniqueInfo on LogicalTechnique {
     LogicalTechnique.finnedXWing ||
     LogicalTechnique.simpleColoringWrap ||
     LogicalTechnique.simpleColoringTrap ||
+    LogicalTechnique.xChain ||
+    LogicalTechnique.remotePair ||
     LogicalTechnique.xyChain => PuzzleDifficulty.expert,
+    LogicalTechnique.xCycle ||
+    LogicalTechnique.discontinuousNiceLoop ||
+    LogicalTechnique.continuousNiceLoop ||
     LogicalTechnique.aic ||
     LogicalTechnique.aicType2 => PuzzleDifficulty.master,
   };
@@ -135,6 +153,9 @@ class CandidateRef {
 
   @override
   int get hashCode => Object.hash(index, digit);
+
+  @override
+  String toString() => '($digit)r${index ~/ 9 + 1}c${index % 9 + 1}';
 }
 
 enum LogicalLinkStrength { strong, weak }
@@ -189,6 +210,8 @@ class LogicalStep {
     this.groupLinks = const [],
     this.chainCells = const [],
     this.chainNodes = const [],
+    this.candidateColors = const {},
+    this.isLoop = false,
   });
 
   final LogicalTechnique technique;
@@ -200,6 +223,8 @@ class LogicalStep {
   final List<LogicalGroupLink> groupLinks;
   final List<int> chainCells;
   final List<CandidateRef> chainNodes;
+  final Map<CandidateRef, int> candidateColors;
+  final bool isLoop;
   final String focus;
   final String explanation;
 
@@ -226,6 +251,16 @@ class LogicalStep {
     var mask = 0;
     for (final item in eliminations) {
       if (item.index == index) mask |= SudokuEngine.bitFor(item.digit);
+    }
+    return mask;
+  }
+
+  int candidateColorMaskAt(int index, int color) {
+    var mask = 0;
+    for (final entry in candidateColors.entries) {
+      if (entry.key.index == index && entry.value == color) {
+        mask |= SudokuEngine.bitFor(entry.key.digit);
+      }
     }
     return mask;
   }
@@ -304,6 +339,8 @@ class LogicalSolver {
       if (step != null) return step;
       step = _findUniqueRectangleType2(masks);
       if (step != null) return step;
+      step = _findUniqueRectangleType3(masks);
+      if (step != null) return step;
       step = _findUniqueRectangleType4(masks);
       if (step != null) return step;
       step = _findBugPlusOne(masks);
@@ -327,15 +364,25 @@ class LogicalSolver {
       if (step != null) return step;
       step = _findFinnedXWing(masks);
       if (step != null) return step;
+      step = _findRemotePair(values, masks);
+      if (step != null) return step;
       step = _findSimpleColoring(masks, wrap: true);
       if (step != null) return step;
       step = _findSimpleColoring(masks, wrap: false);
+      if (step != null) return step;
+      step = _findXChain(masks);
       if (step != null) return step;
       step = _findXYChain(values, masks);
       if (step != null) return step;
     }
 
     if (maxDifficulty.rank >= PuzzleDifficulty.master.rank) {
+      step = _findXCycle(masks);
+      if (step != null) return step;
+      step = _findNiceLoop(masks, continuous: false);
+      if (step != null) return step;
+      step = _findNiceLoop(masks, continuous: true);
+      if (step != null) return step;
       step = _findAIC(masks);
       if (step != null) return step;
       step = _findAIC(masks, type2: true);
@@ -373,6 +420,7 @@ class LogicalSolver {
       LogicalTechnique.finnedXWing => _findFinnedXWing(masks),
       LogicalTechnique.uniqueRectangleType1 => _findUniqueRectangleType1(masks),
       LogicalTechnique.uniqueRectangleType2 => _findUniqueRectangleType2(masks),
+      LogicalTechnique.uniqueRectangleType3 => _findUniqueRectangleType3(masks),
       LogicalTechnique.uniqueRectangleType4 => _findUniqueRectangleType4(masks),
       LogicalTechnique.bugPlusOne => _findBugPlusOne(masks),
       LogicalTechnique.skyscraper => _findSkyscraper(masks),
@@ -389,7 +437,18 @@ class LogicalSolver {
         masks,
         wrap: false,
       ),
+      LogicalTechnique.xChain => _findXChain(masks),
+      LogicalTechnique.remotePair => _findRemotePair(values, masks),
       LogicalTechnique.xyChain => _findXYChain(values, masks),
+      LogicalTechnique.xCycle => _findXCycle(masks),
+      LogicalTechnique.discontinuousNiceLoop => _findNiceLoop(
+        masks,
+        continuous: false,
+      ),
+      LogicalTechnique.continuousNiceLoop => _findNiceLoop(
+        masks,
+        continuous: true,
+      ),
       LogicalTechnique.aic => _findAIC(masks),
       LogicalTechnique.aicType2 => _findAIC(masks, type2: true),
     };
@@ -990,6 +1049,120 @@ class LogicalSolver {
             explanation:
                 '矩形底边两格都只含 ${pairDigits.join('/')}，顶边两格都是 ${pairDigits.join('/')}+$extraDigit。为避免四角落入可互换的双解矩形，两个顶格至少一格必须取 $extraDigit，因此同时看到它们的格可删除 $extraDigit。',
           );
+        }
+      }
+    }
+    return null;
+  }
+
+  LogicalStep? _findUniqueRectangleType3(List<int> masks) {
+    for (final rows in _combinations(
+      List<int>.generate(9, (index) => index),
+      2,
+    )) {
+      for (final columns in _combinations(
+        List<int>.generate(9, (index) => index),
+        2,
+      )) {
+        final cells = [
+          rows[0] * 9 + columns[0],
+          rows[0] * 9 + columns[1],
+          rows[1] * 9 + columns[0],
+          rows[1] * 9 + columns[1],
+        ];
+        if (cells.map(_boxOf).toSet().length != 2 ||
+            cells.any((index) => masks[index] == 0)) {
+          continue;
+        }
+
+        final sidePairs = <(List<int>, List<int>)>[
+          ([cells[0], cells[1]], [cells[2], cells[3]]),
+          ([cells[2], cells[3]], [cells[0], cells[1]]),
+          ([cells[0], cells[2]], [cells[1], cells[3]]),
+          ([cells[1], cells[3]], [cells[0], cells[2]]),
+        ];
+        for (final (floor, roof) in sidePairs) {
+          final pairMask = masks[floor.first];
+          if (SudokuEngine.countBits(pairMask) != 2 ||
+              masks[floor.last] != pairMask ||
+              roof.any((index) => (masks[index] & pairMask) != pairMask)) {
+            continue;
+          }
+          final roofExtraMasks = [
+            for (final index in roof) masks[index] & ~pairMask,
+          ];
+          if (roofExtraMasks.any((mask) => mask == 0)) continue;
+          final extraMask = roofExtraMasks[0] | roofExtraMasks[1];
+          if (SudokuEngine.countBits(extraMask) < 2) continue;
+
+          final sharedUnits = _units.where(
+            (unit) =>
+                unit.cells.contains(roof.first) &&
+                unit.cells.contains(roof.last),
+          );
+          for (final unit in sharedUnits) {
+            final availableCompanions = [
+              for (final index in unit.cells)
+                if (!cells.contains(index) &&
+                    masks[index] != 0 &&
+                    SudokuEngine.countBits(masks[index]) <= 4)
+                  index,
+            ];
+            for (
+              var companionCount = 1;
+              companionCount <= 3;
+              companionCount++
+            ) {
+              if (availableCompanions.length < companionCount) break;
+              for (final companions in _combinations(
+                availableCompanions,
+                companionCount,
+              )) {
+                var subsetMask = extraMask;
+                for (final index in companions) {
+                  subsetMask |= masks[index];
+                }
+                final subsetSize = companionCount + 1;
+                if (SudokuEngine.countBits(subsetMask) != subsetSize) continue;
+
+                final protectedCells = {...cells, ...companions};
+                final eliminations = <CandidateRef>[];
+                for (final index in unit.cells) {
+                  if (protectedCells.contains(index)) continue;
+                  for (final digit in SudokuEngine.digitsInMask(
+                    masks[index] & subsetMask,
+                  )) {
+                    eliminations.add(CandidateRef(index, digit));
+                  }
+                }
+                if (eliminations.isEmpty) continue;
+
+                final pairDigits = SudokuEngine.digitsInMask(pairMask);
+                final extraDigits = SudokuEngine.digitsInMask(extraMask);
+                final subsetDigits = SudokuEngine.digitsInMask(subsetMask);
+                return LogicalStep(
+                  technique: LogicalTechnique.uniqueRectangleType3,
+                  pattern: [
+                    for (final index in cells)
+                      for (final digit in SudokuEngine.digitsInMask(
+                        masks[index],
+                      ))
+                        CandidateRef(index, digit),
+                    for (final index in companions)
+                      for (final digit in SudokuEngine.digitsInMask(
+                        masks[index],
+                      ))
+                        CandidateRef(index, digit),
+                  ],
+                  eliminations: eliminations,
+                  focus:
+                      '观察 ${cells.map(_cellCoordinate).join('、')} 的 ${pairDigits.join('/')} 唯一矩形，以及${unit.label}内的 ${companions.map(_cellCoordinate).join('、')}。',
+                  explanation:
+                      '两个顶格至少有一格必须使用额外候选 ${extraDigits.join('、')}，可将它们合并看成一个虚拟格。它与 ${companions.map(_cellCoordinate).join('、')} 共同形成候选 ${subsetDigits.join('、')} 的显性${_chineseCount(subsetSize)}数组，因此${unit.label}其他格可删除这些候选。',
+                );
+              }
+            }
+          }
         }
       }
     }
@@ -1733,6 +1906,125 @@ class LogicalSolver {
     return null;
   }
 
+  LogicalStep? _findRemotePair(
+    List<int> values,
+    List<int> masks, {
+    int maxCells = 8,
+    int maxStates = 50000,
+  }) {
+    final cellsByPair = <int, List<int>>{};
+    for (var index = 0; index < SudokuBoard.cellCount; index++) {
+      if (values[index] != 0 || SudokuEngine.countBits(masks[index]) != 2) {
+        continue;
+      }
+      cellsByPair.putIfAbsent(masks[index], () => <int>[]).add(index);
+    }
+
+    for (final entry in cellsByPair.entries) {
+      final pairMask = entry.key;
+      final pairCells = entry.value;
+      if (pairCells.length < 4) continue;
+      final queue = <List<int>>[
+        for (final index in pairCells) [index],
+      ];
+      var cursor = 0;
+      var examinedStates = 0;
+      while (cursor < queue.length && examinedStates < maxStates) {
+        final path = queue[cursor++];
+        examinedStates++;
+        if (path.length >= 4 &&
+            path.length.isEven &&
+            !_arePeers(path.first, path.last)) {
+          final eliminations = <CandidateRef>{};
+          for (final digit in SudokuEngine.digitsInMask(pairMask)) {
+            eliminations.addAll(
+              _commonPeerEliminations(
+                masks: masks,
+                digit: digit,
+                first: path.first,
+                second: path.last,
+                excludedIndices: path.toSet(),
+              ),
+            );
+          }
+          if (eliminations.isNotEmpty) {
+            return _remotePairStep(
+              path: path,
+              pairMask: pairMask,
+              eliminations: eliminations.toList(),
+            );
+          }
+        }
+
+        if (path.length >= maxCells) continue;
+        for (final next in pairCells) {
+          if (path.contains(next) || !_arePeers(path.last, next)) continue;
+          queue.add([...path, next]);
+        }
+      }
+    }
+    return null;
+  }
+
+  LogicalStep _remotePairStep({
+    required List<int> path,
+    required int pairMask,
+    required List<CandidateRef> eliminations,
+  }) {
+    final pairDigits = SudokuEngine.digitsInMask(pairMask);
+    final links = <LogicalLink>[];
+    final chainNodes = <CandidateRef>[];
+    var incomingDigit = pairDigits.first;
+    for (var position = 0; position < path.length; position++) {
+      final cell = path[position];
+      final outgoingDigit = pairDigits.firstWhere(
+        (digit) => digit != incomingDigit,
+      );
+      if (position == 0) {
+        chainNodes.add(CandidateRef(cell, incomingDigit));
+      }
+      chainNodes.add(CandidateRef(cell, outgoingDigit));
+      links.add(
+        LogicalLink(
+          first: CandidateRef(cell, incomingDigit),
+          second: CandidateRef(cell, outgoingDigit),
+          strength: LogicalLinkStrength.strong,
+          reason: '${_cellCoordinate(cell)} 是 ${pairDigits.join('/')} 双值格',
+        ),
+      );
+      if (position < path.length - 1) {
+        final next = path[position + 1];
+        chainNodes.add(CandidateRef(next, outgoingDigit));
+        links.add(
+          LogicalLink(
+            first: CandidateRef(cell, outgoingDigit),
+            second: CandidateRef(next, outgoingDigit),
+            strength: LogicalLinkStrength.weak,
+            reason:
+                '${_cellCoordinate(cell)} 与 ${_cellCoordinate(next)} 互看，候选 $outgoingDigit 不能同时成立',
+          ),
+        );
+      }
+      incomingDigit = outgoingDigit;
+    }
+
+    return LogicalStep(
+      technique: LogicalTechnique.remotePair,
+      pattern: [
+        for (final index in path)
+          for (final digit in pairDigits) CandidateRef(index, digit),
+      ],
+      eliminations: eliminations,
+      links: links,
+      chainCells: path,
+      chainNodes: chainNodes,
+      focus:
+          '沿 ${path.map(_cellCoordinate).join(' → ')} 追踪相同的 ${pairDigits.join('/')} 双值格。',
+      explanation:
+          '链上每个双值格都与前一格取相反的值，因此两个链端的 ${pairDigits.join('/')} 极性相反。同时看到两个链端的格，无论哪种排列成立，都不能再取 ${pairDigits.join('、')}。',
+    );
+  }
+
   LogicalStep? _findSimpleColoring(List<int> masks, {required bool wrap}) {
     for (var digit = 1; digit <= 9; digit++) {
       final bit = SudokuEngine.bitFor(digit);
@@ -1815,6 +2107,10 @@ class LogicalSolver {
             eliminations: eliminations,
             links: links,
             chainCells: component.toList(),
+            candidateColors: {
+              for (final entry in colors.entries)
+                CandidateRef(entry.key, digit): entry.value,
+            },
             focus:
                 '沿候选 $digit 的强链交替染两色，观察 ${conflict.map(_cellCoordinate).join('、')}。',
             explanation:
@@ -1845,10 +2141,105 @@ class LogicalSolver {
           eliminations: eliminations,
           links: links,
           chainCells: component.toList(),
+          candidateColors: {
+            for (final entry in colors.entries)
+              CandidateRef(entry.key, digit): entry.value,
+          },
           focus: '沿候选 $digit 的强链交替染两色，再查找同时看到两种颜色的格。',
           explanation:
               '强链两端必有一端成立，所以这个连通链的两种颜色必有一色为真。被高亮删除的格同时看到两种颜色，无论哪色为真都不能取 $digit。',
         );
+      }
+    }
+    return null;
+  }
+
+  LogicalStep? _findXChain(
+    List<int> masks, {
+    int minLinks = 5,
+    int maxLinks = 11,
+    int maxStates = 100000,
+  }) {
+    final graph = _buildAICGraph(masks);
+    var examinedStates = 0;
+    for (var digit = 1; digit <= 9; digit++) {
+      if (examinedStates >= maxStates) break;
+      final starts = graph.entries
+          .where(
+            (entry) =>
+                entry.key.digit == digit &&
+                entry.value.any(
+                  (edge) =>
+                      edge.to.digit == digit &&
+                      edge.strength == LogicalLinkStrength.strong,
+                ),
+          )
+          .map((entry) => entry.key)
+          .toList();
+      final queue = <_AICState>[
+        for (final start in starts)
+          _AICState(
+            nodes: [start],
+            links: const [],
+            nextStrength: LogicalLinkStrength.strong,
+          ),
+      ];
+      var cursor = 0;
+      while (cursor < queue.length && examinedStates < maxStates) {
+        final state = queue[cursor++];
+        examinedStates++;
+        final current = state.nodes.last;
+        for (final edge in graph[current] ?? const <_AICEdge>[]) {
+          if (edge.to.digit != digit ||
+              edge.strength != state.nextStrength ||
+              state.nodes.contains(edge.to)) {
+            continue;
+          }
+          final nodes = [...state.nodes, edge.to];
+          final links = [
+            ...state.links,
+            LogicalLink(
+              first: current,
+              second: edge.to,
+              strength: edge.strength,
+              reason: edge.reason,
+            ),
+          ];
+          final nextStrength = edge.strength == LogicalLinkStrength.strong
+              ? LogicalLinkStrength.weak
+              : LogicalLinkStrength.strong;
+
+          if (edge.strength == LogicalLinkStrength.strong &&
+              links.length >= minLinks) {
+            final eliminations = _commonPeerEliminations(
+              masks: masks,
+              digit: digit,
+              first: nodes.first.index,
+              second: nodes.last.index,
+              excludedIndices: nodes.map((node) => node.index).toSet(),
+            );
+            if (eliminations.isNotEmpty) {
+              return LogicalStep(
+                technique: LogicalTechnique.xChain,
+                pattern: nodes,
+                eliminations: eliminations,
+                links: links,
+                chainCells: nodes.map((node) => node.index).toSet().toList(),
+                chainNodes: nodes,
+                focus:
+                    '从 ($digit)${_cellCoordinate(nodes.first.index)} 出发，沿同一候选数的强弱关系交替追踪到 ($digit)${_cellCoordinate(nodes.last.index)}。',
+                explanation:
+                    'X-Chain 以强链开始并以强链结束，中间强、弱链交替，因此两个端点至少有一处必须是 $digit。同时看到两个端点的格可删除候选 $digit。',
+              );
+            }
+          }
+
+          if (links.length < maxLinks) {
+            queue.add(
+              _AICState(nodes: nodes, links: links, nextStrength: nextStrength),
+            );
+          }
+        }
       }
     }
     return null;
@@ -1947,11 +2338,16 @@ class LogicalSolver {
     required List<CandidateRef> eliminations,
   }) {
     final links = <LogicalLink>[];
+    final chainNodes = <CandidateRef>[];
     var incomingDigit = startDigit;
     for (var position = 0; position < path.length; position++) {
       final cell = path[position];
       final outgoingMask = masks[cell] & ~SudokuEngine.bitFor(incomingDigit);
       final outgoingDigit = SudokuEngine.singleDigit(outgoingMask);
+      if (position == 0) {
+        chainNodes.add(CandidateRef(cell, incomingDigit));
+      }
+      chainNodes.add(CandidateRef(cell, outgoingDigit));
       links.add(
         LogicalLink(
           first: CandidateRef(cell, incomingDigit),
@@ -1960,6 +2356,7 @@ class LogicalSolver {
         ),
       );
       if (position < path.length - 1) {
+        chainNodes.add(CandidateRef(path[position + 1], outgoingDigit));
         links.add(
           LogicalLink(
             first: CandidateRef(cell, outgoingDigit),
@@ -1987,11 +2384,263 @@ class LogicalSolver {
       eliminations: eliminations,
       links: links,
       chainCells: path,
+      chainNodes: chainNodes,
       focus:
           '从 ${_cellLabel(path.first)} 的候选 $startDigit 出发，沿 ${path.length} 个高亮双值格追踪链条。',
       explanation:
           '链条顺序：$chainDescription。每个双值格内部是强链，相邻格的共同候选是弱链；如果起点的 $startDigit 为假，推导到终点的 $startDigit 就必为真，因此两端至少一端为 $startDigit，同时看到两端的格可删除该候选。',
     );
+  }
+
+  LogicalStep? _findXCycle(
+    List<int> masks, {
+    int maxLinks = 12,
+    int maxStates = 120000,
+  }) => _findAlternatingLoop(
+    masks,
+    mode: _LoopMode.xCycle,
+    maxLinks: maxLinks,
+    maxStates: maxStates,
+  );
+
+  LogicalStep? _findNiceLoop(
+    List<int> masks, {
+    required bool continuous,
+    int maxLinks = 12,
+    int maxStates = 160000,
+  }) {
+    if (continuous) {
+      return _findAlternatingLoop(
+        masks,
+        mode: _LoopMode.continuousNiceLoop,
+        maxLinks: maxLinks,
+        maxStates: maxStates,
+      );
+    }
+    return _findAlternatingLoop(
+          masks,
+          mode: _LoopMode.discontinuousNiceLoop,
+          initialStrength: LogicalLinkStrength.strong,
+          maxLinks: maxLinks,
+          maxStates: maxStates,
+        ) ??
+        _findAlternatingLoop(
+          masks,
+          mode: _LoopMode.discontinuousNiceLoop,
+          initialStrength: LogicalLinkStrength.weak,
+          maxLinks: maxLinks,
+          maxStates: maxStates,
+        );
+  }
+
+  LogicalStep? _findAlternatingLoop(
+    List<int> masks, {
+    required _LoopMode mode,
+    required int maxLinks,
+    required int maxStates,
+    LogicalLinkStrength? initialStrength,
+  }) {
+    final graph = _buildAICGraph(masks);
+    final sameDigitOnly = mode == _LoopMode.xCycle;
+    final initialStrengths = initialStrength != null
+        ? [initialStrength]
+        : mode == _LoopMode.continuousNiceLoop
+        ? const [LogicalLinkStrength.strong]
+        : LogicalLinkStrength.values;
+    final queue = <_AICState>[];
+
+    for (final start in graph.keys) {
+      for (final strength in initialStrengths) {
+        if ((graph[start] ?? const <_AICEdge>[]).any(
+          (edge) =>
+              edge.strength == strength &&
+              (!sameDigitOnly || edge.to.digit == start.digit),
+        )) {
+          queue.add(
+            _AICState(nodes: [start], links: const [], nextStrength: strength),
+          );
+        }
+      }
+    }
+
+    var cursor = 0;
+    var examinedStates = 0;
+    var enqueuedStates = queue.length;
+    while (cursor < queue.length && examinedStates < maxStates) {
+      final state = queue[cursor++];
+      examinedStates++;
+      final start = state.nodes.first;
+      final current = state.nodes.last;
+      for (final edge in graph[current] ?? const <_AICEdge>[]) {
+        if (edge.strength != state.nextStrength ||
+            (sameDigitOnly && edge.to.digit != start.digit)) {
+          continue;
+        }
+
+        final link = LogicalLink(
+          first: current,
+          second: edge.to,
+          strength: edge.strength,
+          reason: edge.reason,
+        );
+        if (edge.to == start) {
+          final linkCount = state.links.length + 1;
+          if (linkCount < 4 || state.links.isEmpty) continue;
+          final closesContinuously =
+              edge.strength != state.links.first.strength;
+          if (mode == _LoopMode.continuousNiceLoop && !closesContinuously) {
+            continue;
+          }
+          if (mode == _LoopMode.discontinuousNiceLoop && closesContinuously) {
+            continue;
+          }
+          if (!closesContinuously && linkCount < 5) continue;
+          if (!sameDigitOnly &&
+              state.nodes.map((node) => node.digit).toSet().length < 2) {
+            continue;
+          }
+
+          final links = [...state.links, link];
+          final step = _loopStep(
+            masks: masks,
+            mode: mode,
+            nodes: state.nodes,
+            links: links,
+            continuous: closesContinuously,
+          );
+          if (step != null) return step;
+          continue;
+        }
+
+        if (state.nodes.contains(edge.to) ||
+            state.links.length + 1 >= maxLinks ||
+            enqueuedStates >= maxStates) {
+          continue;
+        }
+        final nextStrength = edge.strength == LogicalLinkStrength.strong
+            ? LogicalLinkStrength.weak
+            : LogicalLinkStrength.strong;
+        queue.add(
+          _AICState(
+            nodes: [...state.nodes, edge.to],
+            links: [...state.links, link],
+            nextStrength: nextStrength,
+          ),
+        );
+        enqueuedStates++;
+      }
+    }
+    return null;
+  }
+
+  LogicalStep? _loopStep({
+    required List<int> masks,
+    required _LoopMode mode,
+    required List<CandidateRef> nodes,
+    required List<LogicalLink> links,
+    required bool continuous,
+  }) {
+    final start = nodes.first;
+    final technique = switch (mode) {
+      _LoopMode.xCycle => LogicalTechnique.xCycle,
+      _LoopMode.discontinuousNiceLoop => LogicalTechnique.discontinuousNiceLoop,
+      _LoopMode.continuousNiceLoop => LogicalTechnique.continuousNiceLoop,
+    };
+    final pattern = nodes.toSet().toList();
+    final chainCells = nodes.map((node) => node.index).toSet().toList();
+
+    if (continuous) {
+      final eliminations = _continuousLoopEliminations(
+        masks: masks,
+        nodes: nodes,
+        links: links,
+      );
+      if (eliminations.isEmpty) return null;
+      final weakLinkCount = links
+          .where((link) => link.strength == LogicalLinkStrength.weak)
+          .length;
+      return LogicalStep(
+        technique: technique,
+        pattern: pattern,
+        eliminations: eliminations,
+        links: links,
+        chainCells: chainCells,
+        chainNodes: nodes,
+        isLoop: true,
+        focus: mode == _LoopMode.xCycle
+            ? '沿候选 ${start.digit} 的强链、弱链交替追踪，直到回到起点。'
+            : '从 (${start.digit})${_cellCoordinate(start.index)} 出发，沿强弱链交替追踪并闭合成环。',
+        explanation: mode == _LoopMode.xCycle
+            ? 'X-Cycle 在同一候选数上完整交替闭合。环上的 $weakLinkCount 条弱链都有一端必然成立，因此同时与某条弱链两端冲突的其他候选 ${start.digit} 可以删除。'
+            : '这是一个强弱链完整交替的连续闭环。环上的 $weakLinkCount 条弱链都可视为“至少一端成立”，所以同时与其两端冲突的其他候选都可删除。',
+      );
+    }
+
+    final discontinuity = links.first.strength;
+    if (discontinuity == LogicalLinkStrength.strong) {
+      return LogicalStep(
+        technique: technique,
+        pattern: pattern,
+        eliminations: const [],
+        placementIndex: start.index,
+        placementDigit: start.digit,
+        links: links,
+        chainCells: chainCells,
+        chainNodes: nodes,
+        isLoop: true,
+        focus:
+            '从 (${start.digit})${_cellCoordinate(start.index)} 出发，可以看到起点两侧都是强链。',
+        explanation:
+            '如果起点候选 ${start.digit} 为假，两侧的强链会沿闭环推导出矛盾。因此这个候选必须成立，${_cellCoordinate(start.index)} = ${start.digit}。',
+      );
+    }
+    return LogicalStep(
+      technique: technique,
+      pattern: pattern,
+      eliminations: [start],
+      links: links,
+      chainCells: chainCells,
+      chainNodes: nodes,
+      isLoop: true,
+      focus:
+          '从 (${start.digit})${_cellCoordinate(start.index)} 出发，可以看到起点两侧都是弱链。',
+      explanation:
+          '如果起点候选 ${start.digit} 成立，两侧的弱链会沿闭环推导出矛盾。因此这个候选必须为假，可从 ${_cellCoordinate(start.index)} 删除 ${start.digit}。',
+    );
+  }
+
+  List<CandidateRef> _continuousLoopEliminations({
+    required List<int> masks,
+    required List<CandidateRef> nodes,
+    required List<LogicalLink> links,
+  }) {
+    final loopNodes = nodes.toSet();
+    final eliminations = <CandidateRef>{};
+    for (final link in links) {
+      if (link.strength != LogicalLinkStrength.weak) continue;
+      for (var index = 0; index < SudokuBoard.cellCount; index++) {
+        for (final digit in SudokuEngine.digitsInMask(masks[index])) {
+          final candidate = CandidateRef(index, digit);
+          if (loopNodes.contains(candidate)) continue;
+          if (_areCandidatesWeaklyLinked(candidate, link.first) &&
+              _areCandidatesWeaklyLinked(candidate, link.second)) {
+            eliminations.add(candidate);
+          }
+        }
+      }
+    }
+    final sorted = eliminations.toList()
+      ..sort((first, second) => _candidateId(first) - _candidateId(second));
+    return sorted;
+  }
+
+  static bool _areCandidatesWeaklyLinked(
+    CandidateRef first,
+    CandidateRef second,
+  ) {
+    if (first == second) return false;
+    if (first.index == second.index) return first.digit != second.digit;
+    return first.digit == second.digit && _arePeers(first.index, second.index);
   }
 
   LogicalStep? _findAIC(
@@ -2356,3 +3005,5 @@ class _AICState {
   final List<LogicalLink> links;
   final LogicalLinkStrength nextStrength;
 }
+
+enum _LoopMode { xCycle, discontinuousNiceLoop, continuousNiceLoop }

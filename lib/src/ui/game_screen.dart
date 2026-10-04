@@ -301,7 +301,7 @@ class _HintPanel extends StatelessWidget {
                 (step.chainNodes.isNotEmpty || step.chainCells.isNotEmpty)) ...[
               const SizedBox(height: 10),
               Text(
-                '链条顺序',
+                step.isLoop ? '闭环顺序' : '链条顺序',
                 style: Theme.of(context).textTheme.labelLarge
                     ?.copyWith(fontWeight: FontWeight.w700),
               ),
@@ -312,19 +312,35 @@ class _HintPanel extends StatelessWidget {
                 children: [
                   if (step.chainNodes.isNotEmpty)
                     for (var index = 0; index < step.chainNodes.length; index++)
-                      Chip(
+                      ActionChip(
+                        key: ValueKey(
+                          'hint-node-$index-${step.chainNodes[index].index}-${step.chainNodes[index].digit}',
+                        ),
                         visualDensity: VisualDensity.compact,
                         label: Text(
-                          '${index + 1}  (${step.chainNodes[index].digit})r${step.chainNodes[index].index ~/ 9 + 1}c${step.chainNodes[index].index % 9 + 1}',
+                          '${_circledNumber(index)}${index == 0
+                              ? step.isLoop
+                                    ? ' 闭环起点'
+                                    : ' 链头'
+                              : !step.isLoop && index == step.chainNodes.length - 1
+                              ? ' 链尾'
+                              : ''}  (${step.chainNodes[index].digit})r${step.chainNodes[index].index ~/ 9 + 1}c${step.chainNodes[index].index % 9 + 1}',
                         ),
+                        onPressed: () =>
+                            controller.selectCell(step.chainNodes[index].index),
                       )
                   else
                     for (var index = 0; index < step.chainCells.length; index++)
-                      Chip(
+                      ActionChip(
+                        key: ValueKey(
+                          'hint-cell-$index-${step.chainCells[index]}',
+                        ),
                         visualDensity: VisualDensity.compact,
                         label: Text(
-                          '${index + 1}  r${step.chainCells[index] ~/ 9 + 1}c${step.chainCells[index] % 9 + 1}',
+                          '${_circledNumber(index)}  r${step.chainCells[index] ~/ 9 + 1}c${step.chainCells[index] % 9 + 1}',
                         ),
+                        onPressed: () =>
+                            controller.selectCell(step.chainCells[index]),
                       ),
                 ],
               ),
@@ -350,7 +366,10 @@ class _HintPanel extends StatelessWidget {
             if (explained &&
                 (step.links.isNotEmpty || step.groupLinks.isNotEmpty)) ...[
               const SizedBox(height: 10),
-              _ChainLegend(colors: colors),
+              _ChainLegend(
+                colors: colors,
+                showsCandidateColors: step.candidateColors.isNotEmpty,
+              ),
             ],
             const SizedBox(height: 8),
             Row(
@@ -374,12 +393,42 @@ class _HintPanel extends StatelessWidget {
       ),
     );
   }
+
+  String _circledNumber(int index) {
+    const labels = [
+      '①',
+      '②',
+      '③',
+      '④',
+      '⑤',
+      '⑥',
+      '⑦',
+      '⑧',
+      '⑨',
+      '⑩',
+      '⑪',
+      '⑫',
+      '⑬',
+      '⑭',
+      '⑮',
+      '⑯',
+      '⑰',
+      '⑱',
+      '⑲',
+      '⑳',
+    ];
+    return index < labels.length ? labels[index] : '${index + 1}.';
+  }
 }
 
 class _ChainLegend extends StatelessWidget {
-  const _ChainLegend({required this.colors});
+  const _ChainLegend({
+    required this.colors,
+    required this.showsCandidateColors,
+  });
 
   final ColorScheme colors;
+  final bool showsCandidateColors;
 
   @override
   Widget build(BuildContext context) {
@@ -389,6 +438,10 @@ class _ChainLegend extends StatelessWidget {
       children: [
         _LegendItem(color: colors.primary, label: '实线：强链'),
         _LegendItem(color: colors.secondary, label: '虚线：弱链', dashed: true),
+        if (showsCandidateColors) ...[
+          const _LegendItem(color: Color(0xFF1565C0), label: '蓝色：染色 A'),
+          const _LegendItem(color: Color(0xFFEF6C00), label: '橙色：染色 B'),
+        ],
         _LegendItem(color: colors.error, label: '红色：可删候选'),
       ],
     );

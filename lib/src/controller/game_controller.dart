@@ -186,6 +186,9 @@ class GameController extends ChangeNotifier {
   int hintEliminationMaskAt(int index) =>
       hintLevel >= 2 ? hintStep?.eliminationMaskAt(index) ?? 0 : 0;
 
+  int hintCandidateColorMaskAt(int index, int color) =>
+      hintLevel >= 2 ? hintStep?.candidateColorMaskAt(index, color) ?? 0 : 0;
+
   List<LogicalLink> get hintLinks =>
       hintLevel >= 2 ? hintStep?.links ?? const [] : const [];
 
@@ -194,6 +197,11 @@ class GameController extends ChangeNotifier {
 
   List<int> get hintChainCells =>
       hintLevel >= 2 ? hintStep?.chainCells ?? const [] : const [];
+
+  List<CandidateRef> get hintChainNodes =>
+      hintLevel >= 2 ? hintStep?.chainNodes ?? const [] : const [];
+
+  bool get hintIsLoop => hintLevel >= 2 && (hintStep?.isLoop ?? false);
 
   bool isPeerOfSelected(int index) {
     final selected = selectedIndex;

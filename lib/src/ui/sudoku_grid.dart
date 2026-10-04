@@ -36,8 +36,15 @@ class SudokuGrid extends StatelessWidget {
                 painter: _ChainPainter(
                   links: controller.hintLinks,
                   groupLinks: controller.hintGroupLinks,
+                  chainNodes: controller.hintChainNodes,
+                  isLoop: controller.hintIsLoop,
                   strongColor: colors.primary,
                   weakColor: colors.secondary,
+                  endColor: colors.tertiary,
+                  nodeSurfaceColor: colors.surface,
+                  onStrongColor: colors.onPrimary,
+                  onEndColor: colors.onTertiary,
+                  onNodeSurfaceColor: colors.onSurface,
                 ),
               ),
             ),
@@ -51,14 +58,28 @@ class _ChainPainter extends CustomPainter {
   const _ChainPainter({
     required this.links,
     required this.groupLinks,
+    required this.chainNodes,
+    required this.isLoop,
     required this.strongColor,
     required this.weakColor,
+    required this.endColor,
+    required this.nodeSurfaceColor,
+    required this.onStrongColor,
+    required this.onEndColor,
+    required this.onNodeSurfaceColor,
   });
 
   final List<LogicalLink> links;
   final List<LogicalGroupLink> groupLinks;
+  final List<CandidateRef> chainNodes;
+  final bool isLoop;
   final Color strongColor;
   final Color weakColor;
+  final Color endColor;
+  final Color nodeSurfaceColor;
+  final Color onStrongColor;
+  final Color onEndColor;
+  final Color onNodeSurfaceColor;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -128,6 +149,7 @@ class _ChainPainter extends CustomPainter {
     }
 
     for (final entry in nodeStrengths.entries) {
+      if (chainNodes.contains(entry.key)) continue;
       final color = entry.value == LogicalLinkStrength.strong
           ? strongColor
           : weakColor;
@@ -138,6 +160,58 @@ class _ChainPainter extends CustomPainter {
           ..color = color
           ..strokeWidth = 1.6
           ..style = PaintingStyle.stroke,
+      );
+    }
+
+    for (var index = 0; index < chainNodes.length; index++) {
+      final candidate = chainNodes[index];
+      final isStart = index == 0;
+      final isEnd = !isLoop && index == chainNodes.length - 1;
+      final fillColor = isStart
+          ? strongColor
+          : isEnd
+          ? endColor
+          : nodeSurfaceColor;
+      final foregroundColor = isStart
+          ? onStrongColor
+          : isEnd
+          ? onEndColor
+          : onNodeSurfaceColor;
+      final center = _candidateCenter(candidate, cellWidth, cellHeight);
+      final badgeRadius = nodeRadius * 1.35;
+      canvas.drawCircle(
+        center,
+        badgeRadius,
+        Paint()
+          ..color = fillColor
+          ..style = PaintingStyle.fill,
+      );
+      if (!isStart && !isEnd) {
+        canvas.drawCircle(
+          center,
+          badgeRadius,
+          Paint()
+            ..color = strongColor
+            ..strokeWidth = 1.2
+            ..style = PaintingStyle.stroke,
+        );
+      }
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: '${index + 1}',
+          style: TextStyle(
+            color: foregroundColor,
+            fontSize: badgeRadius * (index >= 9 ? 0.95 : 1.15),
+            fontWeight: FontWeight.w800,
+            height: 1,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.center,
+      )..layout();
+      textPainter.paint(
+        canvas,
+        center - Offset(textPainter.width / 2, textPainter.height / 2),
       );
     }
   }
@@ -197,8 +271,15 @@ class _ChainPainter extends CustomPainter {
   bool shouldRepaint(_ChainPainter oldDelegate) =>
       oldDelegate.links != links ||
       oldDelegate.groupLinks != groupLinks ||
+      oldDelegate.chainNodes != chainNodes ||
+      oldDelegate.isLoop != isLoop ||
       oldDelegate.strongColor != strongColor ||
-      oldDelegate.weakColor != weakColor;
+      oldDelegate.weakColor != weakColor ||
+      oldDelegate.endColor != endColor ||
+      oldDelegate.nodeSurfaceColor != nodeSurfaceColor ||
+      oldDelegate.onStrongColor != onStrongColor ||
+      oldDelegate.onEndColor != onEndColor ||
+      oldDelegate.onNodeSurfaceColor != onNodeSurfaceColor;
 }
 
 class _SudokuCell extends StatelessWidget {
@@ -221,13 +302,13 @@ class _SudokuCell extends StatelessWidget {
     Color background = colors.surface;
     if (peer) background = colors.primaryContainer.withValues(alpha: 0.28);
     if (sameValue) background = colors.secondaryContainer;
-    if (selected) background = colors.primaryContainer;
     if (controller.isHintPatternCell(index)) {
       background = colors.tertiaryContainer;
     }
     if (controller.isHintAffectedCell(index)) {
       background = colors.errorContainer.withValues(alpha: 0.72);
     }
+    if (selected) background = colors.primaryContainer;
 
     return Semantics(
       label: '第 ${row + 1} 行第 ${column + 1} 列${value == 0 ? '空格' : value}',
@@ -254,6 +335,8 @@ class _SudokuCell extends StatelessWidget {
                   color: colors.onSurfaceVariant,
                   patternMask: controller.hintPatternMaskAt(index),
                   eliminationMask: controller.hintEliminationMaskAt(index),
+                  colorAMask: controller.hintCandidateColorMaskAt(index, 0),
+                  colorBMask: controller.hintCandidateColorMaskAt(index, 1),
                 )
               : Center(
                   child: Text(
@@ -286,12 +369,16 @@ class _CandidateMarks extends StatelessWidget {
     required this.color,
     required this.patternMask,
     required this.eliminationMask,
+    required this.colorAMask,
+    required this.colorBMask,
   });
 
   final int mask;
   final Color color;
   final int patternMask;
   final int eliminationMask;
+  final int colorAMask;
+  final int colorBMask;
 
   @override
   Widget build(BuildContext context) {
@@ -319,22 +406,55 @@ class _CandidateMarks extends StatelessWidget {
                           final eliminated =
                               (eliminationMask & SudokuEngine.bitFor(digit)) !=
                               0;
-                          return Text(
-                            visible ? '$digit' : '',
-                            style: TextStyle(
-                              color: eliminated
-                                  ? Theme.of(context).colorScheme.error
-                                  : highlighted
-                                  ? Theme.of(context).colorScheme.tertiary
-                                  : color,
-                              fontSize: 8.5,
-                              height: 1,
-                              fontWeight: highlighted || eliminated
-                                  ? FontWeight.w800
-                                  : FontWeight.normal,
-                              decoration: eliminated
-                                  ? TextDecoration.lineThrough
-                                  : null,
+                          final colorA =
+                              (colorAMask & SudokuEngine.bitFor(digit)) != 0;
+                          final colorB =
+                              (colorBMask & SudokuEngine.bitFor(digit)) != 0;
+                          final brightness = Theme.of(context).brightness;
+                          final candidateColor = colorA
+                              ? brightness == Brightness.light
+                                    ? const Color(0xFF1565C0)
+                                    : const Color(0xFF64B5F6)
+                              : colorB
+                              ? brightness == Brightness.light
+                                    ? const Color(0xFFEF6C00)
+                                    : const Color(0xFFFFB74D)
+                              : null;
+                          return Container(
+                            padding: candidateColor == null
+                                ? EdgeInsets.zero
+                                : const EdgeInsets.all(1.2),
+                            decoration: candidateColor == null
+                                ? null
+                                : BoxDecoration(
+                                    color: candidateColor.withValues(
+                                      alpha: 0.16,
+                                    ),
+                                    shape: BoxShape.circle,
+                                  ),
+                            child: Text(
+                              visible ? '$digit' : '',
+                              style: TextStyle(
+                                color: eliminated
+                                    ? Theme.of(context).colorScheme.error
+                                    : candidateColor ??
+                                          (highlighted
+                                              ? Theme.of(context)
+                                                    .colorScheme
+                                                    .tertiary
+                                              : color),
+                                fontSize: 8.5,
+                                height: 1,
+                                fontWeight:
+                                    highlighted ||
+                                        eliminated ||
+                                        candidateColor != null
+                                    ? FontWeight.w800
+                                    : FontWeight.normal,
+                                decoration: eliminated
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                              ),
                             ),
                           );
                         },

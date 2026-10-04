@@ -13,8 +13,8 @@
   - 简单：加入区块摈除和显性数对
   - 中等：加入显性/隐性二至四数组和 X-Wing
   - 困难：加入 Swordfish、唯一矩形、BUG+1、翼和典型短链
-  - 专家：加入 Jellyfish、Finned X-Wing、简单染色和 XY-Chain
-  - 骨灰：需要 AIC Type 1/2 交替推理链
+  - 专家：加入 Jellyfish、Finned X-Wing、简单染色、Remote Pairs 和 X/XY-Chain
+  - 骨灰：加入 X-Cycle、不连续/连续 Nice Loop 和 AIC Type 1/2
 - 每道生成题都经过唯一解检查和逻辑求解验证
 - 唯一矩形和 BUG+1 仅用于已经通过唯一解验证的题目
 - 全标所有合法候选数
@@ -31,8 +31,13 @@
   - 第一次只高亮应该观察的区域
   - 第二层解释技巧、结构和结论
   - 链类技巧使用实线显示强链、虚线显示弱链
+  - Remote Pairs、X/XY-Chain 和 AIC 在棋盘上按推导顺序编号，并突出链头、链尾
+  - X-Cycle 与 Nice Loop 显示完整闭合边，区分“闭环起点”与普通链首尾
+  - 简单染色使用蓝/橙两色区分候选，红色标出可删候选
+  - 点击链条坐标可直接聚焦到对应棋格
   - 需要时可代为执行一步，并可撤销
-- 提示覆盖唯余、宫行列摈除、区块摈除、显性/隐性二至四数组、X-Wing、Swordfish、Jellyfish、Finned X-Wing、唯一矩形 Type 1/2/4、BUG+1、摩天楼、双线风筝、空矩形、W-Wing、XY-Wing、XYZ-Wing、简单染色的同色矛盾/双色夹击、最长 8 格的 XY-Chain，以及最多 11 条连接的 AIC Type 1/2
+- 高阶提示通过真实难题回归逐步校验，不会删除唯一解中的正确候选
+- 提示覆盖唯余、宫行列摈除、区块摈除、显性/隐性二至四数组、X-Wing、Swordfish、Jellyfish、Finned X-Wing、唯一矩形 Type 1/2/3/4、BUG+1、摩天楼、双线风筝、空矩形、W-Wing、XY-Wing、XYZ-Wing、简单染色的同色矛盾/双色夹击、Remote Pairs、X-Chain、最长 8 格的 XY-Chain、最多 12 条连接的 X-Cycle/不连续/连续 Nice Loop，以及最多 11 条连接的 AIC Type 1/2
 - 内置技巧练习：自动完成前置逻辑，让 X-Wing、摩天楼、双线风筝、空矩形、W-Wing 或 XY-Wing 恰好成为下一步；练习局不会覆盖正常游戏进度
 - 深色模式和基础辅助功能标签
 - PWA 安装，支持 Android、iPhone/iPad、Windows、macOS 和 Linux

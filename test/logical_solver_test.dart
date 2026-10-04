@@ -27,15 +27,103 @@ const realXYChainPuzzle =
     '300020064';
 
 const realAICPuzzle =
-    '080050300'
-    '070028000'
-    '900003006'
-    '050000020'
-    '700000009'
-    '020000030'
-    '300200054'
-    '000130000'
-    '008009010';
+    '095020008'
+    '030109000'
+    '000804010'
+    '700400500'
+    '080000020'
+    '001002004'
+    '060308000'
+    '000006080'
+    '800090760';
+
+const realUniqueRectanglePuzzle =
+    '019000000'
+    '005300190'
+    '000900000'
+    '080003400'
+    '700000805'
+    '001800020'
+    '000032000'
+    '072001500'
+    '000060300';
+
+const realBugPlusOnePuzzle =
+    '025003400'
+    '600040050'
+    '000200000'
+    '000470900'
+    '004950300'
+    '002031000'
+    '030004000'
+    '080000006'
+    '009300870';
+
+const realAicType2Puzzle =
+    '014000090'
+    '097104200'
+    '060009400'
+    '000410000'
+    '002000300'
+    '000560000'
+    '000700030'
+    '009001060'
+    '030006980';
+
+const hodokuXChainPuzzle =
+    '3.4.2..8.'
+    '..6......'
+    '.5..7.3..'
+    '...68..2.'
+    '....34...'
+    '.6.15.7..'
+    '.1.......'
+    '..9....6.'
+    '..8217..5';
+
+const hodokuRemotePairPuzzle =
+    '..845...6'
+    '..3..1...'
+    '......87.'
+    '.......48'
+    '.2.1.37..'
+    '.6..9....'
+    '9...14.3.'
+    '1.7.2..5.'
+    '2........';
+
+const hodokuUniqueRectangleType3Puzzle =
+    '.8..3.1..'
+    '.....23..'
+    '..64...75'
+    '3.9.2....'
+    '.2.5.1.8.'
+    '..7.4...2'
+    '7..6.....'
+    '......8..'
+    '54......7';
+
+const hodokuDiscontinuousNiceLoopState =
+    '3.74651..'
+    '215798436'
+    '4..2.....'
+    '...68..43'
+    '..4.2...1'
+    '..3.4.2..'
+    '..1.....7'
+    '.....2...'
+    '53.87.91.';
+
+const hodokuContinuousNiceLoopState =
+    '.4..6.1.2'
+    '.275..496'
+    '.....43.8'
+    '41...7985'
+    '....5.2.1'
+    '......6.7'
+    '..4....13'
+    '.619...24'
+    '.3...1.69';
 
 void main() {
   const logicalSolver = LogicalSolver();
@@ -97,8 +185,65 @@ void main() {
 
       expect(result.solved, isTrue, reason: difficulty.label);
       expect(result.hardestDifficulty, difficulty, reason: difficulty.label);
+      _expectSolutionSafeTrace(
+        generated.puzzle.values,
+        solver: logicalSolver,
+        engine: engine,
+        reason: '${difficulty.label} fallback',
+      );
     });
   }
+
+  test('advanced real-puzzle corpus keeps every inference solution-safe', () {
+    for (final encoded in [
+      realXYChainPuzzle,
+      realAICPuzzle,
+      realUniqueRectanglePuzzle,
+      realBugPlusOnePuzzle,
+      realAicType2Puzzle,
+      hodokuXChainPuzzle,
+      hodokuRemotePairPuzzle,
+      hodokuUniqueRectangleType3Puzzle,
+      hodokuDiscontinuousNiceLoopState,
+      hodokuContinuousNiceLoopState,
+    ]) {
+      _expectSolutionSafeTrace(
+        SudokuBoard.parse(encoded).values,
+        solver: logicalSolver,
+        engine: engine,
+        reason: encoded.substring(0, 9),
+      );
+    }
+  });
+
+  test('published HoDoKu examples reach their named techniques', () {
+    for (final example in [
+      (hodokuXChainPuzzle, LogicalTechnique.xChain),
+      (hodokuUniqueRectangleType3Puzzle, LogicalTechnique.uniqueRectangleType3),
+    ]) {
+      final result = logicalSolver.solve(SudokuBoard.parse(example.$1).values);
+      expect(result.solved, isTrue, reason: example.$2.label);
+      expect(
+        result.steps.any((step) => step.technique == example.$2),
+        isTrue,
+        reason: example.$2.label,
+      );
+    }
+  });
+
+  test('published HoDoKu Remote Pairs state removes its documented 5', () {
+    final state = _hodokuRemotePairState();
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.remotePair,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.remotePair);
+    expect(step.chainCells, hasLength(4));
+    expect(step.eliminations, contains(const CandidateRef(51, 5)));
+  });
 
   test('hard puzzle includes an explainable advanced structure', () {
     final generated = generator.generate(PuzzleDifficulty.hard, seed: 20260932);
@@ -232,6 +377,21 @@ void main() {
     expect(step.eliminations, contains(const CandidateRef(10, 3)));
   });
 
+  test('unique rectangle type 3 combines its roof extras with a subset', () {
+    final state = _uniqueRectangleType3State();
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.uniqueRectangleType3,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.uniqueRectangleType3);
+    expect(step.eliminations, contains(const CandidateRef(13, 4)));
+    expect(step.eliminations, contains(const CandidateRef(13, 6)));
+    expect(step.eliminations, contains(const CandidateRef(13, 9)));
+  });
+
   test('unique rectangle type 4 uses the roof strong link', () {
     final state = _uniqueRectangleType4State();
     final step = logicalSolver.findTechnique(
@@ -293,6 +453,8 @@ void main() {
     expect(step!.technique, LogicalTechnique.simpleColoringTrap);
     expect(step.eliminations, contains(const CandidateRef(3, 9)));
     expect(step.links, hasLength(3));
+    expect(step.candidateColors.length, 4);
+    expect(step.candidateColors.values.toSet(), {0, 1});
   });
 
   test(
@@ -311,6 +473,48 @@ void main() {
       expect(step.links, hasLength(4));
     },
   );
+
+  test('X-Chain starts and ends with strong links on one digit', () {
+    final state = _xChainState();
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.xChain,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.xChain);
+    expect(step.eliminations, contains(const CandidateRef(3, 9)));
+    expect(step.chainNodes, hasLength(step.links.length + 1));
+    expect(step.links.length, greaterThanOrEqualTo(5));
+    expect(step.links.first.strength, LogicalLinkStrength.strong);
+    expect(step.links.last.strength, LogicalLinkStrength.strong);
+    expect(step.chainNodes.map((node) => node.digit).toSet(), {9});
+  });
+
+  test('Remote Pairs removes both digits seen from opposite endpoints', () {
+    final state = _remotePairState();
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.remotePair,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.remotePair);
+    expect(step.chainCells, hasLength(4));
+    expect(step.eliminations, contains(const CandidateRef(5, 1)));
+    expect(step.eliminations, contains(const CandidateRef(5, 2)));
+    expect(step.links.map((link) => link.strength), [
+      LogicalLinkStrength.strong,
+      LogicalLinkStrength.weak,
+      LogicalLinkStrength.strong,
+      LogicalLinkStrength.weak,
+      LogicalLinkStrength.strong,
+      LogicalLinkStrength.weak,
+      LogicalLinkStrength.strong,
+    ]);
+  });
 
   test('skyscraper exposes a strong-weak-strong chain', () {
     final state = _syntheticChainState();
@@ -397,6 +601,8 @@ void main() {
     expect(step, isNotNull);
     expect(step!.technique, LogicalTechnique.xyChain);
     expect(step.chainCells, hasLength(4));
+    expect(step.chainNodes, hasLength(step.links.length + 1));
+    expect(step.chainNodes.first.digit, step.chainNodes.last.digit);
     expect(step.chainCells.toSet(), {0, 3, 27, 30});
     expect(step.eliminations, contains(const CandidateRef(9, 1)));
     expect(step.links.map((link) => link.strength), [
@@ -466,27 +672,153 @@ void main() {
     }
   });
 
-  test('AIC is used while solving a real unique puzzle', () {
+  test('X-Cycle closes a one-digit alternating loop', () {
+    final state = _xCycleState();
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.xCycle,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.xCycle);
+    expect(step.isLoop, isTrue);
+    expect(step.chainNodes.map((node) => node.digit).toSet(), {1});
+    expect(step.links, hasLength(step.chainNodes.length));
+    expect(step.isPlacement || step.eliminations.isNotEmpty, isTrue);
+    _expectAlternatingLoop(step);
+  });
+
+  test('discontinuous Nice Loop resolves its strong-strong break', () {
+    final state = _discontinuousNiceLoopState();
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.discontinuousNiceLoop,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.discontinuousNiceLoop);
+    expect(step.isLoop, isTrue);
+    expect(step.links, hasLength(step.chainNodes.length));
+    expect(step.links.first.strength, step.links.last.strength);
+    expect(step.isPlacement || step.eliminations.length == 1, isTrue);
+    _expectAlternatingLoop(step);
+  });
+
+  test('continuous Nice Loop upgrades every weak link', () {
+    final state = _continuousNiceLoopState();
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.continuousNiceLoop,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.continuousNiceLoop);
+    expect(step.isLoop, isTrue);
+    expect(step.links, hasLength(step.chainNodes.length));
+    expect(step.links.first.strength, isNot(step.links.last.strength));
+    expect(step.eliminations, isNotEmpty);
+    _expectAlternatingLoop(step);
+  });
+
+  test('published HoDoKu Nice Loop states produce safe loop inferences', () {
+    final discontinuousState = _hodokuDiscontinuousNiceLoopState();
+    final discontinuous = logicalSolver.findTechnique(
+      values: discontinuousState.values,
+      excludedMasks: discontinuousState.excludedMasks,
+      technique: LogicalTechnique.discontinuousNiceLoop,
+    );
+    final continuous = logicalSolver.findTechnique(
+      values: SudokuBoard.parse(hodokuContinuousNiceLoopState).values,
+      excludedMasks: List<int>.filled(SudokuBoard.cellCount, 0),
+      technique: LogicalTechnique.continuousNiceLoop,
+    );
+
+    expect(discontinuous, isNotNull);
+    expect(discontinuous!.isPlacement, isTrue);
+    final discontinuousSolution = engine
+        .analyzeSolutions(discontinuousState.values)
+        .firstSolution!;
+    expect(
+      discontinuous.placementDigit,
+      discontinuousSolution[discontinuous.placementIndex!],
+    );
+    expect(continuous, isNotNull);
+    expect(continuous!.eliminations.toSet(), {
+      const CandidateRef(13, 3),
+      const CandidateRef(30, 2),
+      const CandidateRef(48, 2),
+      const CandidateRef(49, 2),
+      const CandidateRef(49, 3),
+      const CandidateRef(59, 6),
+      const CandidateRef(59, 8),
+      const CandidateRef(68, 8),
+    });
+  });
+
+  test('level-five loop or AIC solves a real unique puzzle', () {
     final board = SudokuBoard.parse(realAICPuzzle);
     final result = logicalSolver.solve(board.values);
     final step = result.steps.firstWhere(
-      (step) => step.technique == LogicalTechnique.aic,
+      (step) => step.difficulty == PuzzleDifficulty.master,
     );
 
     expect(engine.analyzeSolutions(board.values).hasUniqueSolution, isTrue);
     expect(result.solved, isTrue);
-    expect(
-      result.steps.any((step) => step.technique == LogicalTechnique.swordfish),
-      isTrue,
-    );
-    expect(
-      result.steps.any((step) => step.technique == LogicalTechnique.xyzWing),
-      isTrue,
-    );
-    expect(step.links.length, inInclusiveRange(5, 11));
+    expect(result.hardestDifficulty, PuzzleDifficulty.master);
+    expect(step.links.length, inInclusiveRange(4, 12));
     expect(step.links.every((link) => link.reason != null), isTrue);
-    expect(step.eliminations, isNotEmpty);
+    expect(step.isPlacement || step.eliminations.isNotEmpty, isTrue);
   });
+}
+
+void _expectAlternatingLoop(LogicalStep step) {
+  for (var index = 1; index < step.links.length; index++) {
+    expect(step.links[index].strength, isNot(step.links[index - 1].strength));
+  }
+}
+
+void _expectSolutionSafeTrace(
+  List<int> puzzle, {
+  required LogicalSolver solver,
+  required SudokuEngine engine,
+  required String reason,
+}) {
+  final analysis = engine.analyzeSolutions(puzzle);
+  expect(analysis.hasUniqueSolution, isTrue, reason: reason);
+  final solution = analysis.firstSolution!;
+  final values = List<int>.of(puzzle);
+  final excludedMasks = List<int>.filled(SudokuBoard.cellCount, 0);
+
+  for (var count = 0; count < 600 && values.contains(0); count++) {
+    final step = solver.findNext(values: values, excludedMasks: excludedMasks);
+    expect(step, isNotNull, reason: '$reason stopped at step $count');
+    final safeStep = step!;
+    if (safeStep.placementIndex case final index?) {
+      expect(
+        safeStep.placementDigit,
+        solution[index],
+        reason: '$reason ${safeStep.technique.label} placed a wrong digit',
+      );
+    }
+    for (final elimination in safeStep.eliminations) {
+      expect(
+        elimination.digit,
+        isNot(solution[elimination.index]),
+        reason:
+            '$reason ${safeStep.technique.label} removed the solution candidate at r${elimination.index ~/ 9 + 1}c${elimination.index % 9 + 1}',
+      );
+    }
+    solver.applyStep(
+      values: values,
+      excludedMasks: excludedMasks,
+      step: safeStep,
+    );
+  }
+
+  expect(values, solution, reason: '$reason did not reach the unique solution');
 }
 
 ({List<int> values, List<int> excludedMasks}) _syntheticChainState() {
@@ -576,6 +908,25 @@ void main() {
   return (values: List<int>.filled(81, 0), excludedMasks: excludedMasks);
 }
 
+({List<int> values, List<int> excludedMasks}) _uniqueRectangleType3State() {
+  final excludedMasks = List<int>.filled(81, 0);
+  final pairMask = SudokuEngine.bitFor(1) | SudokuEngine.bitFor(2);
+  for (final index in [0, 3]) {
+    excludedMasks[index] = SudokuEngine.fullMask & ~pairMask;
+  }
+  final firstRoofMask =
+      pairMask | SudokuEngine.bitFor(4) | SudokuEngine.bitFor(6);
+  final secondRoofMask =
+      pairMask | SudokuEngine.bitFor(6) | SudokuEngine.bitFor(9);
+  excludedMasks[9] = SudokuEngine.fullMask & ~firstRoofMask;
+  excludedMasks[12] = SudokuEngine.fullMask & ~secondRoofMask;
+  final firstCompanionMask = SudokuEngine.bitFor(4) | SudokuEngine.bitFor(6);
+  final secondCompanionMask = SudokuEngine.bitFor(6) | SudokuEngine.bitFor(9);
+  excludedMasks[10] = SudokuEngine.fullMask & ~firstCompanionMask;
+  excludedMasks[11] = SudokuEngine.fullMask & ~secondCompanionMask;
+  return (values: List<int>.filled(81, 0), excludedMasks: excludedMasks);
+}
+
 ({List<int> values, List<int> excludedMasks}) _uniqueRectangleType4State() {
   final excludedMasks = List<int>.filled(81, 0);
   final pairMask = SudokuEngine.bitFor(1) | SudokuEngine.bitFor(2);
@@ -610,6 +961,103 @@ void main() {
     (index) => allowedNines.contains(index) ? 0 : SudokuEngine.bitFor(9),
   );
   return (values: List<int>.filled(81, 0), excludedMasks: excludedMasks);
+}
+
+({List<int> values, List<int> excludedMasks}) _xChainState() {
+  final bit = SudokuEngine.bitFor(9);
+  const allowedNines = {0, 3, 6, 18, 20, 30, 47, 50, 66};
+  final excludedMasks = List<int>.generate(
+    81,
+    (index) => allowedNines.contains(index) ? 0 : bit,
+  );
+  return (values: List<int>.filled(81, 0), excludedMasks: excludedMasks);
+}
+
+({List<int> values, List<int> excludedMasks}) _xCycleState() {
+  final allowedMasks = List<int>.filled(81, SudokuEngine.bitFor(8));
+  for (final index in [0, 3, 9, 12, 27, 30]) {
+    allowedMasks[index] |= SudokuEngine.bitFor(1);
+  }
+  return (
+    values: List<int>.filled(81, 0),
+    excludedMasks: [
+      for (final mask in allowedMasks) SudokuEngine.fullMask & ~mask,
+    ],
+  );
+}
+
+({List<int> values, List<int> excludedMasks}) _discontinuousNiceLoopState() {
+  final allowedMasks = List<int>.filled(81, SudokuEngine.bitFor(9));
+  allowedMasks[0] |= SudokuEngine.bitFor(1) | SudokuEngine.bitFor(8);
+  allowedMasks[3] |= SudokuEngine.bitFor(1) | SudokuEngine.bitFor(2);
+  allowedMasks[30] |= SudokuEngine.bitFor(2) | SudokuEngine.bitFor(3);
+  allowedMasks[27] |= SudokuEngine.bitFor(3) | SudokuEngine.bitFor(1);
+  return (
+    values: List<int>.filled(81, 0),
+    excludedMasks: [
+      for (final mask in allowedMasks) SudokuEngine.fullMask & ~mask,
+    ],
+  );
+}
+
+({List<int> values, List<int> excludedMasks})
+_hodokuDiscontinuousNiceLoopState() {
+  final excludedMasks = List<int>.filled(SudokuBoard.cellCount, 0);
+  for (final candidate in const [
+    CandidateRef(39, 9),
+    CandidateRef(48, 9),
+    CandidateRef(57, 5),
+    CandidateRef(59, 3),
+    CandidateRef(59, 9),
+    CandidateRef(66, 5),
+  ]) {
+    excludedMasks[candidate.index] |= SudokuEngine.bitFor(candidate.digit);
+  }
+  return (
+    values: SudokuBoard.parse(hodokuDiscontinuousNiceLoopState).values.toList(),
+    excludedMasks: excludedMasks,
+  );
+}
+
+({List<int> values, List<int> excludedMasks}) _continuousNiceLoopState() {
+  final allowedMasks = List<int>.filled(81, SudokuEngine.bitFor(9));
+  allowedMasks[0] |= SudokuEngine.bitFor(1) | SudokuEngine.bitFor(2);
+  allowedMasks[27] |= SudokuEngine.bitFor(2) | SudokuEngine.bitFor(3);
+  allowedMasks[30] |= SudokuEngine.bitFor(3) | SudokuEngine.bitFor(4);
+  allowedMasks[3] |= SudokuEngine.bitFor(4) | SudokuEngine.bitFor(1);
+  return (
+    values: List<int>.filled(81, 0),
+    excludedMasks: [
+      for (final mask in allowedMasks) SudokuEngine.fullMask & ~mask,
+    ],
+  );
+}
+
+({List<int> values, List<int> excludedMasks}) _remotePairState() {
+  final excludedMasks = List<int>.filled(81, 0);
+  final pairMask = SudokuEngine.bitFor(1) | SudokuEngine.bitFor(2);
+  for (final index in [0, 3, 30, 32]) {
+    excludedMasks[index] = SudokuEngine.fullMask & ~pairMask;
+  }
+  return (values: List<int>.filled(81, 0), excludedMasks: excludedMasks);
+}
+
+({List<int> values, List<int> excludedMasks}) _hodokuRemotePairState() {
+  final values = SudokuBoard.parse(
+    '798452316'
+    '603781092'
+    '012030870'
+    '370265048'
+    '820143760'
+    '060897023'
+    '980014237'
+    '107028050'
+    '200070081',
+  ).values.toList();
+  return (
+    values: values,
+    excludedMasks: List<int>.filled(SudokuBoard.cellCount, 0),
+  );
 }
 
 ({List<int> values, List<int> excludedMasks}) _bugPlusOneState() {

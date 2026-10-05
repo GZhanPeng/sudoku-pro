@@ -125,6 +125,72 @@ const hodokuContinuousNiceLoopState =
     '.619...24'
     '.3...1.69';
 
+const hodokuGroupedAicType1State =
+    '3451289..'
+    '976...281'
+    '281...345'
+    '.......1.'
+    '1..6...3.'
+    '4.2.815.9'
+    '7.4...128'
+    '819.4.653'
+    '.2381.794';
+
+const hodokuGroupedAicType2State =
+    '2...5376.'
+    '765.....3'
+    '..3786.2.'
+    '..43..2.6'
+    '326.9.14.'
+    '...624...'
+    '6.2.3..5.'
+    '..7.6...2'
+    '839...6..';
+
+const hodokuGroupedDiscontinuousLoopState =
+    '4....3...'
+    '..8....4.'
+    '16..94...'
+    '...4.....'
+    '7...51964'
+    '541269..8'
+    '.5....4..'
+    '..4..2.95'
+    '31..4.6..';
+
+const hodokuGroupedContinuousLoopState =
+    '.5243196.'
+    '.367...15'
+    '19.....2.'
+    '2.......6'
+    '94.......'
+    '56....749'
+    '3.9......'
+    '6.5.1....'
+    '.8.5..69.';
+
+const hodokuAlsXZState =
+    '.934.7.6.'
+    '4....59..'
+    '.276...41'
+    '........5'
+    '91.5...8.'
+    '2..78....'
+    '6..25.4..'
+    '.4.......'
+    '...1....3';
+
+const hodokuDoublyLinkedAlsXZState =
+    '.........'
+    '2.....349'
+    '5...3926.'
+    '.9.......'
+    '..41..98.'
+    '...598..4'
+    '..182...6'
+    '......7..'
+    '..3..6...';
+
 void main() {
   const logicalSolver = LogicalSolver();
   const engine = SudokuEngine();
@@ -206,6 +272,10 @@ void main() {
       hodokuUniqueRectangleType3Puzzle,
       hodokuDiscontinuousNiceLoopState,
       hodokuContinuousNiceLoopState,
+      hodokuGroupedAicType1State,
+      hodokuGroupedAicType2State,
+      hodokuGroupedDiscontinuousLoopState,
+      hodokuGroupedContinuousLoopState,
     ]) {
       _expectSolutionSafeTrace(
         SudokuBoard.parse(encoded).values,
@@ -758,6 +828,207 @@ void main() {
     });
   });
 
+  test('published HoDoKu Grouped AIC Type 1 uses a multi-cell node', () {
+    final state = _candidateState(hodokuGroupedAicType1State);
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.groupedAic,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.groupedAic);
+    expect(step.chainGroups.any((group) => group.length > 1), isTrue);
+    expect(step.groupLinks, hasLength(step.chainGroups.length - 1));
+    expect(step.eliminations, isNotEmpty);
+    _expectGroupedLinksAlternate(step);
+    _expectStepSolutionSafe(
+      state.values,
+      step,
+      engine: engine,
+      reason: 'HoDoKu Grouped AIC Type 1',
+    );
+  });
+
+  test('published HoDoKu Grouped AIC Type 2 removes crossed candidates', () {
+    final state = _candidateState(
+      hodokuGroupedAicType2State,
+      excluded: const [
+        CandidateRef(8, 8),
+        CandidateRef(27, 1),
+        CandidateRef(28, 1),
+        CandidateRef(32, 7),
+        CandidateRef(53, 7),
+        CandidateRef(66, 5),
+        CandidateRef(68, 5),
+        CandidateRef(75, 1),
+        CandidateRef(75, 4),
+        CandidateRef(77, 1),
+        CandidateRef(77, 7),
+        CandidateRef(80, 7),
+      ],
+    );
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.groupedAicType2,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.groupedAicType2);
+    expect(step.chainGroups.any((group) => group.length > 1), isTrue);
+    expect(step.eliminations, isNotEmpty);
+    _expectGroupedLinksAlternate(step);
+    _expectStepSolutionSafe(
+      state.values,
+      step,
+      engine: engine,
+      reason: 'HoDoKu Grouped AIC Type 2',
+    );
+  });
+
+  test('published HoDoKu grouped discontinuous loop places safely', () {
+    final state = _candidateState(
+      hodokuGroupedDiscontinuousLoopState,
+      excluded: const [
+        CandidateRef(8, 1),
+        CandidateRef(8, 2),
+        CandidateRef(8, 7),
+        CandidateRef(17, 1),
+        CandidateRef(17, 2),
+        CandidateRef(17, 3),
+        CandidateRef(17, 7),
+        CandidateRef(27, 2),
+        CandidateRef(28, 2),
+        CandidateRef(29, 2),
+        CandidateRef(33, 3),
+        CandidateRef(33, 7),
+        CandidateRef(34, 3),
+        CandidateRef(34, 7),
+        CandidateRef(35, 3),
+        CandidateRef(35, 7),
+      ],
+    );
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.groupedDiscontinuousNiceLoop,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.isLoop, isTrue);
+    expect(step.chainGroups.any((group) => group.length > 1), isTrue);
+    expect(step.isPlacement || step.eliminations.isNotEmpty, isTrue);
+    _expectGroupedLinksAlternate(step);
+    _expectStepSolutionSafe(
+      state.values,
+      step,
+      engine: engine,
+      reason: 'HoDoKu grouped discontinuous loop',
+    );
+  });
+
+  test('published HoDoKu grouped continuous loop upgrades weak links', () {
+    final state = _candidateState(
+      hodokuGroupedContinuousLoopState,
+      excluded: const [
+        CandidateRef(13, 8),
+        CandidateRef(14, 8),
+        CandidateRef(20, 8),
+        CandidateRef(24, 8),
+        CandidateRef(26, 8),
+        CandidateRef(39, 2),
+        CandidateRef(40, 2),
+        CandidateRef(41, 2),
+        CandidateRef(62, 7),
+        CandidateRef(71, 7),
+        CandidateRef(76, 4),
+        CandidateRef(77, 4),
+        CandidateRef(80, 4),
+        CandidateRef(80, 7),
+      ],
+    );
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.groupedContinuousNiceLoop,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.isLoop, isTrue);
+    expect(step.chainGroups.any((group) => group.length > 1), isTrue);
+    expect(step.eliminations, isNotEmpty);
+    _expectGroupedLinksAlternate(step);
+    _expectStepSolutionSafe(
+      state.values,
+      step,
+      engine: engine,
+      reason: 'HoDoKu grouped continuous loop',
+    );
+  });
+
+  test('published HoDoKu ALS-XZ removes the documented Z candidates', () {
+    final state = _candidateState(
+      hodokuAlsXZState,
+      excluded: const [
+        CandidateRef(13, 3),
+        CandidateRef(31, 1),
+        CandidateRef(31, 2),
+        CandidateRef(33, 7),
+        CandidateRef(34, 7),
+        CandidateRef(40, 2),
+        CandidateRef(63, 5),
+        CandidateRef(69, 5),
+        CandidateRef(72, 5),
+        CandidateRef(78, 5),
+      ],
+    );
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.alsXZ,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.alsXZ);
+    expect(
+      step.eliminations,
+      containsAll(const [
+        CandidateRef(56, 8),
+        CandidateRef(65, 8),
+        CandidateRef(74, 8),
+      ]),
+    );
+    _expectStepSolutionSafe(
+      state.values,
+      step,
+      engine: engine,
+      reason: 'HoDoKu ALS-XZ',
+    );
+  });
+
+  test('published HoDoKu doubly linked ALS-XZ is solution-safe', () {
+    final state = _candidateState(
+      hodokuDoublyLinkedAlsXZState,
+      excluded: const [CandidateRef(4, 5), CandidateRef(5, 5)],
+    );
+    final step = logicalSolver.findTechnique(
+      values: state.values,
+      excludedMasks: state.excludedMasks,
+      technique: LogicalTechnique.doublyLinkedAlsXZ,
+    );
+
+    expect(step, isNotNull);
+    expect(step!.technique, LogicalTechnique.doublyLinkedAlsXZ);
+    expect(step.eliminations, isNotEmpty);
+    _expectStepSolutionSafe(
+      state.values,
+      step,
+      engine: engine,
+      reason: 'HoDoKu doubly linked ALS-XZ',
+    );
+  });
+
   test('level-five loop or AIC solves a real unique puzzle', () {
     final board = SudokuBoard.parse(realAICPuzzle);
     final result = logicalSolver.solve(board.values);
@@ -774,9 +1045,54 @@ void main() {
   });
 }
 
+({List<int> values, List<int> excludedMasks}) _candidateState(
+  String encoded, {
+  List<CandidateRef> excluded = const [],
+}) {
+  final excludedMasks = List<int>.filled(SudokuBoard.cellCount, 0);
+  for (final candidate in excluded) {
+    excludedMasks[candidate.index] |= SudokuEngine.bitFor(candidate.digit);
+  }
+  return (
+    values: SudokuBoard.parse(encoded).values.toList(),
+    excludedMasks: excludedMasks,
+  );
+}
+
 void _expectAlternatingLoop(LogicalStep step) {
   for (var index = 1; index < step.links.length; index++) {
     expect(step.links[index].strength, isNot(step.links[index - 1].strength));
+  }
+}
+
+void _expectGroupedLinksAlternate(LogicalStep step) {
+  for (var index = 1; index < step.groupLinks.length; index++) {
+    expect(
+      step.groupLinks[index].strength,
+      isNot(step.groupLinks[index - 1].strength),
+    );
+  }
+  expect(step.groupLinks.every((link) => link.reason != null), isTrue);
+}
+
+void _expectStepSolutionSafe(
+  List<int> values,
+  LogicalStep step, {
+  required SudokuEngine engine,
+  required String reason,
+}) {
+  final analysis = engine.analyzeSolutions(values);
+  expect(analysis.hasUniqueSolution, isTrue, reason: reason);
+  final solution = analysis.firstSolution!;
+  if (step.placementIndex case final index?) {
+    expect(step.placementDigit, solution[index], reason: reason);
+  }
+  for (final elimination in step.eliminations) {
+    expect(
+      elimination.digit,
+      isNot(solution[elimination.index]),
+      reason: '$reason removed ${elimination.toString()}',
+    );
   }
 }
 

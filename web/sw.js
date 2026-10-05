@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'sudoku-helper-';
-const CACHE_NAME = `${CACHE_PREFIX}v15`;
+const CACHE_NAME = `${CACHE_PREFIX}v22`;
 const APP_SHELL = [
   './',
   './index.html',

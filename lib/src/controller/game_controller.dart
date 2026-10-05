@@ -49,19 +49,50 @@ class GameController extends ChangeNotifier {
     );
   }
 
-  factory GameController.practice(SudokuBoard puzzle, LogicalTechnique target) {
+  factory GameController.practice(
+    SudokuBoard puzzle,
+    LogicalTechnique target, {
+    List<CandidateRef> initialEliminations = const [],
+  }) {
     final controller = GameController.fromPuzzle(
       puzzle,
       difficulty: target.difficulty,
     );
     final values = List<int>.of(puzzle.values);
     final excludedMasks = List<int>.filled(SudokuBoard.cellCount, 0);
+    controller._practiceTarget = target;
+
+    for (final candidate in initialEliminations) {
+      if (candidate.index < 0 ||
+          candidate.index >= SudokuBoard.cellCount ||
+          candidate.digit < 1 ||
+          candidate.digit > 9 ||
+          values[candidate.index] != 0 ||
+          controller.solution[candidate.index] == candidate.digit) {
+        controller.dispose();
+        throw ArgumentError('练习的前置候选排除不正确');
+      }
+      excludedMasks[candidate.index] |= SudokuEngine.bitFor(candidate.digit);
+    }
 
     for (var count = 0; count < 600; count++) {
-      final step = controller._logicalSolver.findNext(
+      final next = controller._logicalSolver.findNext(
         values: values,
         excludedMasks: excludedMasks,
       );
+      var step = next;
+      if (next?.technique != target &&
+          (initialEliminations.isNotEmpty ||
+              next == null ||
+              next.difficulty.rank >= target.difficulty.rank)) {
+        step =
+            controller._logicalSolver.findTechnique(
+              values: values,
+              excludedMasks: excludedMasks,
+              technique: target,
+            ) ??
+            next;
+      }
       if (step == null) break;
       if (step.technique == target) {
         controller.board.replacePlayableValues(values);
@@ -95,6 +126,10 @@ class GameController extends ChangeNotifier {
     required Set<int> assistedCells,
     List<int>? manualCandidateMasks,
     PuzzleDifficulty? difficulty,
+    int elapsedSeconds = 0,
+    bool isPaused = false,
+    int hintUseCount = 0,
+    int basicSweepUseCount = 0,
   }) {
     final savedManualMasks =
         manualCandidateMasks ?? List<int>.filled(SudokuBoard.cellCount, 0);
@@ -107,7 +142,10 @@ class GameController extends ChangeNotifier {
         savedManualMasks.any((mask) => mask < 0 || mask > 0x1FF) ||
         assistedCells.any(
           (index) => index < 0 || index >= SudokuBoard.cellCount,
-        )) {
+        ) ||
+        elapsedSeconds < 0 ||
+        hintUseCount < 0 ||
+        basicSweepUseCount < 0) {
       throw const FormatException('保存的候选数数据不正确');
     }
 
@@ -129,8 +167,17 @@ class GameController extends ChangeNotifier {
     controller.manualCandidateMasks.setAll(0, savedManualMasks);
     controller.candidatesVisible = candidatesVisible;
     controller.assistedCells.addAll(assistedCells);
+    controller._elapsed = Duration(seconds: elapsedSeconds);
+    controller.isPaused = isPaused;
+    controller.hintUseCount = hintUseCount;
+    controller.basicSweepUseCount = basicSweepUseCount;
+    controller._runningSince = isPaused || controller.isComplete
+        ? null
+        : DateTime.now();
     controller.statusMessage = controller.isComplete
         ? '已恢复完成的题目'
+        : isPaused
+        ? '已恢复上次进度，当前处于暂停状态'
         : '已恢复上次的解题进度';
     return controller;
   }
@@ -143,19 +190,35 @@ class GameController extends ChangeNotifier {
   final List<int> excludedMasks;
   final List<int> manualCandidateMasks;
   final List<GameSnapshot> _history = [];
+  final List<GameSnapshot> _redoHistory = [];
   final Set<int> assistedCells = {};
+  LogicalTechnique? _practiceTarget;
+  LogicalTechnique? get practiceTarget => _practiceTarget;
+  bool practiceCompleted = false;
 
   int? selectedIndex;
+  int? _candidateFocusDigit;
   bool noteMode = false;
   bool candidatesVisible = false;
+  bool isPaused = false;
+  int hintUseCount = 0;
+  int basicSweepUseCount = 0;
   String statusMessage = '选择一个空格开始';
   LogicalStep? hintStep;
   int hintLevel = 0;
+  Duration _elapsed = Duration.zero;
+  DateTime? _runningSince = DateTime.now();
 
   bool get canUndo => _history.isNotEmpty;
+  bool get canRedo => _redoHistory.isNotEmpty;
   bool get isComplete =>
       board.isComplete && _engine.validate(board.values) == null;
   bool get hasHint => hintStep != null;
+  Duration get elapsed {
+    final runningSince = _runningSince;
+    if (runningSince == null) return _elapsed;
+    return _elapsed + DateTime.now().difference(runningSince);
+  }
 
   List<int> get puzzleValues => List<int>.generate(
     SudokuBoard.cellCount,
@@ -171,8 +234,8 @@ class GameController extends ChangeNotifier {
     if (board.valueAt(index) != 0) return 0;
     final legalMask = legalMaskAt(index);
     return candidatesVisible
-        ? legalMask & ~excludedMasks[index]
-        : legalMask & manualCandidateMasks[index];
+        ? (legalMask & ~excludedMasks[index]) | manualCandidateMasks[index]
+        : manualCandidateMasks[index];
   }
 
   bool isHintPatternCell(int index) =>
@@ -201,6 +264,9 @@ class GameController extends ChangeNotifier {
   List<CandidateRef> get hintChainNodes =>
       hintLevel >= 2 ? hintStep?.chainNodes ?? const [] : const [];
 
+  List<List<CandidateRef>> get hintChainGroups =>
+      hintLevel >= 2 ? hintStep?.chainGroups ?? const [] : const [];
+
   bool get hintIsLoop => hintLevel >= 2 && (hintStep?.isLoop ?? false);
 
   bool isPeerOfSelected(int index) {
@@ -215,10 +281,16 @@ class GameController extends ChangeNotifier {
   }
 
   bool hasSameValueAsSelected(int index) {
+    final digit = highlightedDigit;
+    return digit != null && board.valueAt(index) == digit;
+  }
+
+  /// The selected filled digit, or the last candidate edited in this cell.
+  int? get highlightedDigit {
     final selected = selectedIndex;
-    if (selected == null) return false;
+    if (selected == null || isPaused) return null;
     final value = board.valueAt(selected);
-    return value != 0 && board.valueAt(index) == value;
+    return value == 0 ? _candidateFocusDigit : value;
   }
 
   bool isConflictingCell(int index) {
@@ -240,17 +312,29 @@ class GameController extends ChangeNotifier {
   }
 
   void selectCell(int index) {
+    if (isPaused) return;
     selectedIndex = index;
+    _candidateFocusDigit = null;
     notifyListeners();
   }
 
+  void moveSelection({required int rowDelta, required int columnDelta}) {
+    if (isPaused) return;
+    final current = selectedIndex ?? 0;
+    final row = ((current ~/ 9) + rowDelta).clamp(0, 8);
+    final column = ((current % 9) + columnDelta).clamp(0, 8);
+    selectCell(row * 9 + column);
+  }
+
   void toggleNoteMode() {
+    if (isPaused) return;
     noteMode = !noteMode;
     statusMessage = noteMode ? '候选模式已开启：可逐个标记小数字' : '填数模式已开启';
     notifyListeners();
   }
 
   void enterDigit(int digit) {
+    if (isPaused) return;
     final index = selectedIndex;
     if (index == null || board.isGiven(index)) return;
 
@@ -262,25 +346,27 @@ class GameController extends ChangeNotifier {
     if (board.valueAt(index) == digit) return;
     _pushHistory();
     board.setValue(index, digit);
+    _candidateFocusDigit = null;
     assistedCells.remove(index);
     statusMessage = isComplete
         ? '完成了！'
         : isConflictingCell(index)
         ? '已填写 $digit；与同行、同列或同宫的数字重复'
         : '已填写 $digit';
+    _stopClockIfComplete();
     notifyListeners();
   }
 
   void _toggleCandidate(int index, int digit) {
     if (board.valueAt(index) != 0) return;
+    _candidateFocusDigit = digit;
     final bit = SudokuEngine.bitFor(digit);
-    if ((legalMaskAt(index) & bit) == 0) {
-      statusMessage = '数字 $digit 不是这个格子的合法候选';
-      notifyListeners();
-      return;
-    }
     _pushHistory();
-    if (candidatesVisible) {
+    if (candidatesVisible && (legalMaskAt(index) & bit) != 0) {
+      // In automatic-candidate mode, legal digits toggle the solver-facing
+      // exclusion mask. Clear a duplicate manual mark so an exclusion really
+      // hides the candidate.
+      manualCandidateMasks[index] &= ~bit;
       if ((excludedMasks[index] & bit) != 0) {
         excludedMasks[index] &= ~bit;
         statusMessage = '恢复候选 $digit';
@@ -299,6 +385,7 @@ class GameController extends ChangeNotifier {
   }
 
   void clearSelected() {
+    if (isPaused) return;
     final index = selectedIndex;
     if (index == null || board.isGiven(index)) return;
     if (board.valueAt(index) == 0 &&
@@ -311,11 +398,13 @@ class GameController extends ChangeNotifier {
     excludedMasks[index] = 0;
     manualCandidateMasks[index] = 0;
     assistedCells.remove(index);
+    _candidateFocusDigit = null;
     statusMessage = '已清除当前格';
     notifyListeners();
   }
 
   void showAllCandidates({bool resetManualEliminations = false}) {
+    if (isPaused) return;
     final changed =
         !candidatesVisible ||
         (resetManualEliminations &&
@@ -341,6 +430,13 @@ class GameController extends ChangeNotifier {
   }
 
   BasicSweepResult applyBasicSweep() {
+    if (isPaused) {
+      return BasicSweepResult(
+        values: List<int>.of(board.values),
+        steps: const [],
+        error: '请先继续游戏',
+      );
+    }
     final deadEnd = _deadEndMessage();
     if (deadEnd != null) {
       statusMessage = deadEnd;
@@ -371,13 +467,16 @@ class GameController extends ChangeNotifier {
     _pushHistory();
     board.replacePlayableValues(result.values);
     assistedCells.addAll(result.steps.map((step) => step.index));
+    basicSweepUseCount++;
     statusMessage =
         '完成 ${result.steps.length} 格：唯余 ${result.nakedSingleCount}，摒除 ${result.hiddenSingleCount}';
+    _stopClockIfComplete();
     notifyListeners();
     return result;
   }
 
   void requestHint() {
+    if (isPaused) return;
     if (board.isComplete) {
       statusMessage = '题目已经完成';
       notifyListeners();
@@ -400,10 +499,19 @@ class GameController extends ChangeNotifier {
       }
     }
 
-    final step = _logicalSolver.findNext(
-      values: board.values,
-      excludedMasks: excludedMasks,
-    );
+    final target = _practiceTarget;
+    final step =
+        (target == null
+            ? null
+            : _logicalSolver.findTechnique(
+                values: board.values,
+                excludedMasks: excludedMasks,
+                technique: target,
+              )) ??
+        _logicalSolver.findNext(
+          values: board.values,
+          excludedMasks: excludedMasks,
+        );
     if (step == null) {
       _clearHintInternal();
       statusMessage = '当前技巧库未找到可解释的下一步';
@@ -420,12 +528,14 @@ class GameController extends ChangeNotifier {
     }
     hintStep = step;
     hintLevel = 1;
+    hintUseCount++;
     candidatesVisible = true;
     statusMessage = '已高亮下一步的观察区域';
     notifyListeners();
   }
 
   void revealHintExplanation() {
+    if (isPaused) return;
     if (hintStep == null) return;
     hintLevel = 2;
     statusMessage = '已显示 ${hintStep!.technique.label} 的结构与结论';
@@ -433,6 +543,7 @@ class GameController extends ChangeNotifier {
   }
 
   void dismissHint() {
+    if (isPaused) return;
     if (hintStep == null) return;
     _clearHintInternal();
     statusMessage = '已关闭提示';
@@ -440,6 +551,7 @@ class GameController extends ChangeNotifier {
   }
 
   void applyHintStep() {
+    if (isPaused) return;
     final step = hintStep;
     if (step == null) return;
     _pushHistory();
@@ -455,13 +567,64 @@ class GameController extends ChangeNotifier {
     }
     statusMessage =
         '已执行 ${step.technique.label}：${step.isPlacement ? '填入 1 格' : '删除 ${step.eliminations.length} 个候选'}';
+    if (step.technique == _practiceTarget) practiceCompleted = true;
+    _stopClockIfComplete();
     notifyListeners();
   }
 
   void undo() {
-    if (_history.isEmpty) return;
+    if (isPaused || _history.isEmpty) return;
     _clearHintInternal();
-    final snapshot = _history.removeLast();
+    final wasComplete = isComplete;
+    _redoHistory.add(_snapshot());
+    _restoreSnapshot(_history.removeLast());
+    if (wasComplete && !isComplete) _resumeClock();
+    statusMessage = '已撤销上一步';
+    notifyListeners();
+  }
+
+  void redo() {
+    if (isPaused || _redoHistory.isEmpty) return;
+    _clearHintInternal();
+    _history.add(_snapshot());
+    _restoreSnapshot(_redoHistory.removeLast());
+    _stopClockIfComplete();
+    statusMessage = '已重做上一步';
+    notifyListeners();
+  }
+
+  void togglePause() {
+    if (isComplete) return;
+    if (isPaused) {
+      isPaused = false;
+      _runningSince = DateTime.now();
+      statusMessage = '已继续游戏';
+    } else {
+      _elapsed = elapsed;
+      _runningSince = null;
+      isPaused = true;
+      _clearHintInternal();
+      statusMessage = '游戏已暂停';
+    }
+    notifyListeners();
+  }
+
+  void _pushHistory() {
+    _history.add(_snapshot());
+    _redoHistory.clear();
+    _clearHintInternal();
+  }
+
+  GameSnapshot _snapshot() => GameSnapshot(
+    values: List<int>.of(board.values),
+    excludedMasks: List<int>.of(excludedMasks),
+    manualCandidateMasks: List<int>.of(manualCandidateMasks),
+    candidatesVisible: candidatesVisible,
+    assistedCells: Set<int>.of(assistedCells),
+  );
+
+  void _restoreSnapshot(GameSnapshot snapshot) {
+    _candidateFocusDigit = null;
     board.replacePlayableValues(snapshot.values);
     for (var index = 0; index < excludedMasks.length; index++) {
       excludedMasks[index] = snapshot.excludedMasks[index];
@@ -471,21 +634,18 @@ class GameController extends ChangeNotifier {
     assistedCells
       ..clear()
       ..addAll(snapshot.assistedCells);
-    statusMessage = '已撤销上一步';
-    notifyListeners();
   }
 
-  void _pushHistory() {
-    _history.add(
-      GameSnapshot(
-        values: List<int>.of(board.values),
-        excludedMasks: List<int>.of(excludedMasks),
-        manualCandidateMasks: List<int>.of(manualCandidateMasks),
-        candidatesVisible: candidatesVisible,
-        assistedCells: Set<int>.of(assistedCells),
-      ),
-    );
-    _clearHintInternal();
+  void _stopClockIfComplete() {
+    if (!isComplete || _runningSince == null) return;
+    _elapsed = elapsed;
+    _runningSince = null;
+  }
+
+  void _resumeClock() {
+    if (!isPaused && !isComplete && _runningSince == null) {
+      _runningSince = DateTime.now();
+    }
   }
 
   void _clearHintInternal() {

@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../controller/game_controller.dart';
 import '../logic/sudoku_engine.dart';
 import '../model/sudoku_board.dart';
+import '../settings/app_settings.dart';
 import '../ocr/sudoku_ocr_service.dart'
     if (dart.library.js_interop) '../ocr/sudoku_ocr_stub.dart';
 import 'game_screen.dart';
@@ -134,6 +135,9 @@ class _PuzzleEntryScreenState extends State<PuzzleEntryScreen> {
     }
     final puzzle = SudokuBoard.fromValues(_values);
     final controller = GameController.fromPuzzle(puzzle);
+    if (AppSettingsScope.preferencesOf(context).autoCandidates) {
+      controller.showAllCandidates();
+    }
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
         builder: (_) => GameScreen(controller: controller),

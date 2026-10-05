@@ -19,7 +19,7 @@ extension PuzzleDifficultyInfo on PuzzleDifficulty {
     PuzzleDifficulty.medium => '加入二至四数组和 X-Wing',
     PuzzleDifficulty.hard => '加入 Swordfish、翼和典型短链',
     PuzzleDifficulty.expert => '加入复杂鱼、染色和 X/XY-Chain',
-    PuzzleDifficulty.master => '需要 X-Cycle、Nice Loop 或 AIC',
+    PuzzleDifficulty.master => '需要闭环、Grouped AIC 或 ALS-XZ',
   };
 
   int get rank => index;
@@ -61,6 +61,12 @@ enum LogicalTechnique {
   continuousNiceLoop,
   aic,
   aicType2,
+  groupedAic,
+  groupedAicType2,
+  groupedDiscontinuousNiceLoop,
+  groupedContinuousNiceLoop,
+  alsXZ,
+  doublyLinkedAlsXZ,
 }
 
 extension LogicalTechniqueInfo on LogicalTechnique {
@@ -100,6 +106,12 @@ extension LogicalTechniqueInfo on LogicalTechnique {
     LogicalTechnique.continuousNiceLoop => '连续 Nice Loop',
     LogicalTechnique.aic => 'AIC Type 1',
     LogicalTechnique.aicType2 => 'AIC Type 2',
+    LogicalTechnique.groupedAic => 'Grouped AIC Type 1',
+    LogicalTechnique.groupedAicType2 => 'Grouped AIC Type 2',
+    LogicalTechnique.groupedDiscontinuousNiceLoop => '组节点不连续 Nice Loop',
+    LogicalTechnique.groupedContinuousNiceLoop => '组节点连续 Nice Loop',
+    LogicalTechnique.alsXZ => 'ALS-XZ',
+    LogicalTechnique.doublyLinkedAlsXZ => '双链 ALS-XZ',
   };
 
   PuzzleDifficulty get difficulty => switch (this) {
@@ -137,7 +149,13 @@ extension LogicalTechniqueInfo on LogicalTechnique {
     LogicalTechnique.discontinuousNiceLoop ||
     LogicalTechnique.continuousNiceLoop ||
     LogicalTechnique.aic ||
-    LogicalTechnique.aicType2 => PuzzleDifficulty.master,
+    LogicalTechnique.aicType2 ||
+    LogicalTechnique.groupedAic ||
+    LogicalTechnique.groupedAicType2 ||
+    LogicalTechnique.groupedDiscontinuousNiceLoop ||
+    LogicalTechnique.groupedContinuousNiceLoop ||
+    LogicalTechnique.alsXZ ||
+    LogicalTechnique.doublyLinkedAlsXZ => PuzzleDifficulty.master,
   };
 }
 
@@ -190,11 +208,13 @@ class LogicalGroupLink {
     required this.firstGroup,
     required this.secondGroup,
     required this.strength,
+    this.reason,
   });
 
   final List<CandidateRef> firstGroup;
   final List<CandidateRef> secondGroup;
   final LogicalLinkStrength strength;
+  final String? reason;
 }
 
 class LogicalStep {
@@ -210,6 +230,7 @@ class LogicalStep {
     this.groupLinks = const [],
     this.chainCells = const [],
     this.chainNodes = const [],
+    this.chainGroups = const [],
     this.candidateColors = const {},
     this.isLoop = false,
   });
@@ -223,6 +244,7 @@ class LogicalStep {
   final List<LogicalGroupLink> groupLinks;
   final List<int> chainCells;
   final List<CandidateRef> chainNodes;
+  final List<List<CandidateRef>> chainGroups;
   final Map<CandidateRef, int> candidateColors;
   final bool isLoop;
   final String focus;
@@ -387,6 +409,18 @@ class LogicalSolver {
       if (step != null) return step;
       step = _findAIC(masks, type2: true);
       if (step != null) return step;
+      step = _findGroupedAIC(masks);
+      if (step != null) return step;
+      step = _findGroupedAIC(masks, type2: true);
+      if (step != null) return step;
+      step = _findGroupedNiceLoop(masks, continuous: false);
+      if (step != null) return step;
+      step = _findGroupedNiceLoop(masks, continuous: true);
+      if (step != null) return step;
+      step = _findAlsXZ(masks, doublyLinked: true);
+      if (step != null) return step;
+      step = _findAlsXZ(masks, doublyLinked: false);
+      if (step != null) return step;
     }
     return null;
   }
@@ -451,6 +485,21 @@ class LogicalSolver {
       ),
       LogicalTechnique.aic => _findAIC(masks),
       LogicalTechnique.aicType2 => _findAIC(masks, type2: true),
+      LogicalTechnique.groupedAic => _findGroupedAIC(masks),
+      LogicalTechnique.groupedAicType2 => _findGroupedAIC(masks, type2: true),
+      LogicalTechnique.groupedDiscontinuousNiceLoop => _findGroupedNiceLoop(
+        masks,
+        continuous: false,
+      ),
+      LogicalTechnique.groupedContinuousNiceLoop => _findGroupedNiceLoop(
+        masks,
+        continuous: true,
+      ),
+      LogicalTechnique.alsXZ => _findAlsXZ(masks, doublyLinked: false),
+      LogicalTechnique.doublyLinkedAlsXZ => _findAlsXZ(
+        masks,
+        doublyLinked: true,
+      ),
     };
   }
 
@@ -2894,6 +2943,721 @@ class LogicalSolver {
     );
   }
 
+  LogicalStep? _findGroupedAIC(
+    List<int> masks, {
+    bool type2 = false,
+    int maxLinks = 13,
+    int maxStates = 180000,
+  }) {
+    final graph = _buildGroupedAICGraph(masks);
+    final queue = <_GroupedAICState>[];
+    for (final entry in graph.entries) {
+      if (entry.key.isGroup ||
+          !entry.value.any(
+            (edge) => edge.strength == LogicalLinkStrength.strong,
+          )) {
+        continue;
+      }
+      queue.add(
+        _GroupedAICState(
+          nodes: [entry.key],
+          links: const [],
+          nextStrength: LogicalLinkStrength.strong,
+        ),
+      );
+    }
+
+    var cursor = 0;
+    var examinedStates = 0;
+    var enqueuedStates = queue.length;
+    while (cursor < queue.length && examinedStates < maxStates) {
+      final state = queue[cursor++];
+      examinedStates++;
+      final start = state.nodes.first;
+      final current = state.nodes.last;
+      for (final edge in graph[current] ?? const <_GroupedAICEdge>[]) {
+        if (edge.strength != state.nextStrength ||
+            state.nodes.contains(edge.to) ||
+            state.nodes.any((node) => node.overlaps(edge.to))) {
+          continue;
+        }
+        final link = LogicalGroupLink(
+          firstGroup: current.candidates,
+          secondGroup: edge.to.candidates,
+          strength: edge.strength,
+          reason: edge.reason,
+        );
+        final nodes = [...state.nodes, edge.to];
+        final links = [...state.links, link];
+        final hasGroupNode = nodes.any((node) => node.isGroup);
+
+        if (edge.strength == LogicalLinkStrength.strong &&
+            links.length >= 5 &&
+            !edge.to.isGroup &&
+            hasGroupNode) {
+          final first = start.candidates.single;
+          final last = edge.to.candidates.single;
+          final pattern = {for (final node in nodes) ...node.candidates};
+          final eliminations = type2
+              ? _aicType2Eliminations(
+                  masks: masks,
+                  first: first,
+                  last: last,
+                ).where((candidate) => !pattern.contains(candidate)).toList()
+              : first.digit == last.digit && first.index != last.index
+              ? _commonPeerEliminations(
+                  masks: masks,
+                  digit: first.digit,
+                  first: first.index,
+                  second: last.index,
+                  excludedIndices: pattern
+                      .map((candidate) => candidate.index)
+                      .toSet(),
+                )
+              : const <CandidateRef>[];
+          if (eliminations.isNotEmpty) {
+            return _groupedAICStep(
+              nodes: nodes,
+              links: links,
+              eliminations: eliminations,
+              type2: type2,
+            );
+          }
+        }
+
+        if (links.length < maxLinks && enqueuedStates < maxStates) {
+          queue.add(
+            _GroupedAICState(
+              nodes: nodes,
+              links: links,
+              nextStrength: edge.strength == LogicalLinkStrength.strong
+                  ? LogicalLinkStrength.weak
+                  : LogicalLinkStrength.strong,
+            ),
+          );
+          enqueuedStates++;
+        }
+      }
+    }
+    return null;
+  }
+
+  LogicalStep _groupedAICStep({
+    required List<_GroupedAICNode> nodes,
+    required List<LogicalGroupLink> links,
+    required List<CandidateRef> eliminations,
+    required bool type2,
+  }) {
+    final first = nodes.first.candidates.single;
+    final groupCount = nodes.where((node) => node.isGroup).length;
+    return LogicalStep(
+      technique: type2
+          ? LogicalTechnique.groupedAicType2
+          : LogicalTechnique.groupedAic,
+      pattern: {for (final node in nodes) ...node.candidates}.toList(),
+      eliminations: eliminations,
+      groupLinks: links,
+      chainCells: {
+        for (final node in nodes)
+          for (final candidate in node.candidates) candidate.index,
+      }.toList(),
+      chainGroups: [for (final node in nodes) node.candidates],
+      focus:
+          '从 (${first.digit})${_cellCoordinate(first.index)} 出发，沿强弱链交替追踪，其中有 $groupCount 个高亮节点由多格候选组成。',
+      explanation: type2
+          ? '这条 Grouped AIC 以强链开始和结束，组节点表示“其中至少一个候选成立”。链的两端是互看的不同候选，因此可删除两个端点格中与对端对应的候选。'
+          : '这条 Grouped AIC 以强链开始和结束，组节点表示“其中至少一个候选成立”。两个端点至少有一个成立，同时看到两端的格可删除候选 ${first.digit}。',
+    );
+  }
+
+  LogicalStep? _findGroupedNiceLoop(
+    List<int> masks, {
+    required bool continuous,
+    int maxLinks = 14,
+    int maxStates = 200000,
+  }) {
+    if (continuous) {
+      return _findGroupedAlternatingLoop(
+        masks,
+        continuous: true,
+        initialStrength: LogicalLinkStrength.strong,
+        maxLinks: maxLinks,
+        maxStates: maxStates,
+      );
+    }
+    return _findGroupedAlternatingLoop(
+          masks,
+          continuous: false,
+          initialStrength: LogicalLinkStrength.strong,
+          maxLinks: maxLinks,
+          maxStates: maxStates,
+        ) ??
+        _findGroupedAlternatingLoop(
+          masks,
+          continuous: false,
+          initialStrength: LogicalLinkStrength.weak,
+          maxLinks: maxLinks,
+          maxStates: maxStates,
+        );
+  }
+
+  LogicalStep? _findGroupedAlternatingLoop(
+    List<int> masks, {
+    required bool continuous,
+    required LogicalLinkStrength initialStrength,
+    required int maxLinks,
+    required int maxStates,
+  }) {
+    final graph = _buildGroupedAICGraph(masks);
+    final queue = <_GroupedAICState>[];
+    for (final entry in graph.entries) {
+      if (!entry.key.isGroup &&
+          entry.value.any((edge) => edge.strength == initialStrength)) {
+        queue.add(
+          _GroupedAICState(
+            nodes: [entry.key],
+            links: const [],
+            nextStrength: initialStrength,
+          ),
+        );
+      }
+    }
+
+    var cursor = 0;
+    var examinedStates = 0;
+    var enqueuedStates = queue.length;
+    while (cursor < queue.length && examinedStates < maxStates) {
+      final state = queue[cursor++];
+      examinedStates++;
+      final start = state.nodes.first;
+      final current = state.nodes.last;
+      for (final edge in graph[current] ?? const <_GroupedAICEdge>[]) {
+        if (edge.strength != state.nextStrength) continue;
+        final link = LogicalGroupLink(
+          firstGroup: current.candidates,
+          secondGroup: edge.to.candidates,
+          strength: edge.strength,
+          reason: edge.reason,
+        );
+
+        if (edge.to == start) {
+          final linkCount = state.links.length + 1;
+          if (linkCount < 4 ||
+              !state.nodes.any((node) => node.isGroup) ||
+              state.links.isEmpty) {
+            continue;
+          }
+          final closesContinuously =
+              edge.strength != state.links.first.strength;
+          if (continuous != closesContinuously ||
+              (!continuous && linkCount < 5)) {
+            continue;
+          }
+          final links = [...state.links, link];
+          final step = _groupedLoopStep(
+            masks: masks,
+            nodes: state.nodes,
+            links: links,
+            continuous: continuous,
+          );
+          if (step != null) return step;
+          continue;
+        }
+
+        if (state.nodes.contains(edge.to) ||
+            state.nodes.any((node) => node.overlaps(edge.to)) ||
+            state.links.length + 1 >= maxLinks ||
+            enqueuedStates >= maxStates) {
+          continue;
+        }
+        queue.add(
+          _GroupedAICState(
+            nodes: [...state.nodes, edge.to],
+            links: [...state.links, link],
+            nextStrength: edge.strength == LogicalLinkStrength.strong
+                ? LogicalLinkStrength.weak
+                : LogicalLinkStrength.strong,
+          ),
+        );
+        enqueuedStates++;
+      }
+    }
+    return null;
+  }
+
+  LogicalStep? _groupedLoopStep({
+    required List<int> masks,
+    required List<_GroupedAICNode> nodes,
+    required List<LogicalGroupLink> links,
+    required bool continuous,
+  }) {
+    final start = nodes.first.candidates.single;
+    final pattern = {for (final node in nodes) ...node.candidates};
+    final chainCells = {for (final candidate in pattern) candidate.index}
+        .toList();
+    final chainGroups = [for (final node in nodes) node.candidates];
+    final groupCount = nodes.where((node) => node.isGroup).length;
+
+    if (continuous) {
+      final eliminations = _groupedContinuousLoopEliminations(
+        masks: masks,
+        nodes: nodes,
+        links: links,
+      );
+      if (eliminations.isEmpty) return null;
+      return LogicalStep(
+        technique: LogicalTechnique.groupedContinuousNiceLoop,
+        pattern: pattern.toList(),
+        eliminations: eliminations,
+        groupLinks: links,
+        chainCells: chainCells,
+        chainGroups: chainGroups,
+        isLoop: true,
+        focus:
+            '从 (${start.digit})${_cellCoordinate(start.index)} 出发，经过 $groupCount 个组节点后回到起点，检查闭环上的每条弱链。',
+        explanation:
+            '这是强弱链完整交替的组节点连续闭环。每条弱链的两个节点至少有一端成立，所以同时与两端所有候选冲突的其他候选可以删除。',
+      );
+    }
+
+    if (links.first.strength == LogicalLinkStrength.strong) {
+      return LogicalStep(
+        technique: LogicalTechnique.groupedDiscontinuousNiceLoop,
+        pattern: pattern.toList(),
+        eliminations: const [],
+        placementIndex: start.index,
+        placementDigit: start.digit,
+        groupLinks: links,
+        chainCells: chainCells,
+        chainGroups: chainGroups,
+        isLoop: true,
+        focus:
+            '从 (${start.digit})${_cellCoordinate(start.index)} 出发，经过 $groupCount 个组节点后，起点两侧同为强链。',
+        explanation:
+            '起点候选如果为假，两侧强链经过组节点推导后会产生矛盾，因此 ${_cellCoordinate(start.index)} = ${start.digit}。',
+      );
+    }
+    return LogicalStep(
+      technique: LogicalTechnique.groupedDiscontinuousNiceLoop,
+      pattern: pattern.toList(),
+      eliminations: [start],
+      groupLinks: links,
+      chainCells: chainCells,
+      chainGroups: chainGroups,
+      isLoop: true,
+      focus:
+          '从 (${start.digit})${_cellCoordinate(start.index)} 出发，经过 $groupCount 个组节点后，起点两侧同为弱链。',
+      explanation:
+          '起点候选如果成立，两侧弱链经过组节点推导后会产生矛盾，因此可从 ${_cellCoordinate(start.index)} 删除 ${start.digit}。',
+    );
+  }
+
+  List<CandidateRef> _groupedContinuousLoopEliminations({
+    required List<int> masks,
+    required List<_GroupedAICNode> nodes,
+    required List<LogicalGroupLink> links,
+  }) {
+    final pattern = {for (final node in nodes) ...node.candidates};
+    final eliminations = <CandidateRef>{};
+    for (final link in links) {
+      if (link.strength != LogicalLinkStrength.weak) continue;
+      final first = _GroupedAICNode(link.firstGroup);
+      final second = _GroupedAICNode(link.secondGroup);
+      for (var index = 0; index < SudokuBoard.cellCount; index++) {
+        for (final digit in SudokuEngine.digitsInMask(masks[index])) {
+          final candidate = CandidateRef(index, digit);
+          if (pattern.contains(candidate)) continue;
+          if (_candidateWeaklyLinkedToGroup(candidate, first) &&
+              _candidateWeaklyLinkedToGroup(candidate, second)) {
+            eliminations.add(candidate);
+          }
+        }
+      }
+    }
+    final sorted = eliminations.toList()
+      ..sort((first, second) => _candidateId(first) - _candidateId(second));
+    return sorted;
+  }
+
+  Map<_GroupedAICNode, List<_GroupedAICEdge>> _buildGroupedAICGraph(
+    List<int> masks,
+  ) {
+    final nodesByKey = <String, _GroupedAICNode>{};
+
+    _GroupedAICNode addNode(Iterable<CandidateRef> candidates) {
+      final node = _GroupedAICNode(candidates);
+      return nodesByKey.putIfAbsent(node.key, () => node);
+    }
+
+    for (var index = 0; index < SudokuBoard.cellCount; index++) {
+      for (final digit in SudokuEngine.digitsInMask(masks[index])) {
+        addNode([CandidateRef(index, digit)]);
+      }
+    }
+
+    for (var digit = 1; digit <= 9; digit++) {
+      final bit = SudokuEngine.bitFor(digit);
+      for (final box in SudokuEngine.boxes) {
+        for (final line in [...SudokuEngine.rows, ...SudokuEngine.columns]) {
+          final positions = [
+            for (final index in box)
+              if (line.contains(index) && (masks[index] & bit) != 0) index,
+          ];
+          if (positions.length >= 2) {
+            addNode([
+              for (final index in positions) CandidateRef(index, digit),
+            ]);
+          }
+        }
+      }
+    }
+
+    final rawEdges =
+        <(String, String, LogicalLinkStrength), _GroupedAICUndirectedEdge>{};
+    void addEdge(
+      _GroupedAICNode first,
+      _GroupedAICNode second,
+      LogicalLinkStrength strength,
+      String reason,
+    ) {
+      if (first == second || first.overlaps(second)) return;
+      final low = first.key.compareTo(second.key) < 0 ? first : second;
+      final high = identical(low, first) ? second : first;
+      rawEdges.putIfAbsent(
+        (low.key, high.key, strength),
+        () => _GroupedAICUndirectedEdge(
+          first: low,
+          second: high,
+          strength: strength,
+          reason: reason,
+        ),
+      );
+    }
+
+    final nodes = nodesByKey.values.toList();
+    for (var firstIndex = 0; firstIndex < nodes.length; firstIndex++) {
+      for (
+        var secondIndex = firstIndex + 1;
+        secondIndex < nodes.length;
+        secondIndex++
+      ) {
+        final first = nodes[firstIndex];
+        final second = nodes[secondIndex];
+        if (_groupNodesWeaklyLinked(first, second)) {
+          addEdge(first, second, LogicalLinkStrength.weak, '两个节点中的候选不能同时成立');
+        }
+      }
+    }
+
+    for (var index = 0; index < SudokuBoard.cellCount; index++) {
+      final digits = SudokuEngine.digitsInMask(masks[index]);
+      if (digits.length != 2) continue;
+      addEdge(
+        addNode([CandidateRef(index, digits[0])]),
+        addNode([CandidateRef(index, digits[1])]),
+        LogicalLinkStrength.strong,
+        '${_cellCoordinate(index)} 是双值格',
+      );
+    }
+
+    final nodesByDigit = <int, List<_GroupedAICNode>>{};
+    for (final node in nodesByKey.values) {
+      nodesByDigit.putIfAbsent(node.digit, () => []).add(node);
+    }
+    for (final unit in _units) {
+      final unitIndices = unit.cells.toSet();
+      for (var digit = 1; digit <= 9; digit++) {
+        final bit = SudokuEngine.bitFor(digit);
+        final positions = {
+          for (final index in unit.cells)
+            if ((masks[index] & bit) != 0) CandidateRef(index, digit),
+        };
+        if (positions.length < 2) continue;
+        final eligible = [
+          for (final node in nodesByDigit[digit] ?? const <_GroupedAICNode>[])
+            if (node.candidates.every(
+              (candidate) => unitIndices.contains(candidate.index),
+            ))
+              node,
+        ];
+        for (final pair in _combinations(eligible, 2)) {
+          final first = pair[0];
+          final second = pair[1];
+          if (first.overlaps(second)) continue;
+          if ({...first.candidates, ...second.candidates}.length ==
+                  positions.length &&
+              positions.containsAll(first.candidates) &&
+              positions.containsAll(second.candidates)) {
+            addEdge(
+              first,
+              second,
+              LogicalLinkStrength.strong,
+              '${unit.label}的候选 $digit 只剩这两个节点',
+            );
+          }
+        }
+      }
+    }
+
+    final graph = <_GroupedAICNode, List<_GroupedAICEdge>>{};
+    for (final raw in rawEdges.values) {
+      graph
+          .putIfAbsent(raw.first, () => [])
+          .add(
+            _GroupedAICEdge(
+              to: raw.second,
+              strength: raw.strength,
+              reason: raw.reason,
+            ),
+          );
+      graph
+          .putIfAbsent(raw.second, () => [])
+          .add(
+            _GroupedAICEdge(
+              to: raw.first,
+              strength: raw.strength,
+              reason: raw.reason,
+            ),
+          );
+    }
+    return graph;
+  }
+
+  static bool _groupNodesWeaklyLinked(
+    _GroupedAICNode first,
+    _GroupedAICNode second,
+  ) =>
+      !first.overlaps(second) &&
+      first.candidates.every(
+        (firstCandidate) => second.candidates.every(
+          (secondCandidate) =>
+              _areCandidatesWeaklyLinked(firstCandidate, secondCandidate),
+        ),
+      );
+
+  static bool _candidateWeaklyLinkedToGroup(
+    CandidateRef candidate,
+    _GroupedAICNode group,
+  ) =>
+      !group.candidates.contains(candidate) &&
+      group.candidates.every(
+        (member) => _areCandidatesWeaklyLinked(candidate, member),
+      );
+
+  LogicalStep? _findAlsXZ(
+    List<int> masks, {
+    required bool doublyLinked,
+    int maxCellsPerAls = 4,
+  }) {
+    final alsList = _enumerateAls(masks, maxCells: maxCellsPerAls);
+    LogicalStep? bestStep;
+    var bestEliminationCount = 0;
+    var bestCellCount = SudokuBoard.cellCount + 1;
+    for (var firstIndex = 0; firstIndex < alsList.length; firstIndex++) {
+      final first = alsList[firstIndex];
+      for (
+        var secondIndex = firstIndex + 1;
+        secondIndex < alsList.length;
+        secondIndex++
+      ) {
+        final second = alsList[secondIndex];
+        if (first.cells.any(second.cells.contains)) continue;
+        final sharedMask = first.mask & second.mask;
+        if (SudokuEngine.countBits(sharedMask) == 0) continue;
+
+        final rccDigits = <int>[];
+        for (final digit in SudokuEngine.digitsInMask(sharedMask)) {
+          final firstInstances = first.instancesOf(digit, masks);
+          final secondInstances = second.instancesOf(digit, masks);
+          if (firstInstances.every(
+            (firstCell) => secondInstances.every(
+              (secondCell) => _arePeers(firstCell, secondCell),
+            ),
+          )) {
+            rccDigits.add(digit);
+          }
+        }
+        if (doublyLinked ? rccDigits.length != 2 : rccDigits.length != 1) {
+          continue;
+        }
+
+        final eliminations = doublyLinked
+            ? _doublyLinkedAlsEliminations(
+                masks: masks,
+                first: first,
+                second: second,
+                rccDigits: rccDigits,
+              )
+            : _singlyLinkedAlsEliminations(
+                masks: masks,
+                first: first,
+                second: second,
+                rccDigit: rccDigits.single,
+              );
+        if (eliminations.isEmpty) continue;
+        final cellCount = first.cells.length + second.cells.length;
+        if (eliminations.length < bestEliminationCount ||
+            (eliminations.length == bestEliminationCount &&
+                cellCount >= bestCellCount)) {
+          continue;
+        }
+        bestEliminationCount = eliminations.length;
+        bestCellCount = cellCount;
+        bestStep = _alsXZStep(
+          masks: masks,
+          first: first,
+          second: second,
+          rccDigits: rccDigits,
+          eliminations: eliminations,
+          doublyLinked: doublyLinked,
+        );
+      }
+    }
+    return bestStep;
+  }
+
+  List<CandidateRef> _singlyLinkedAlsEliminations({
+    required List<int> masks,
+    required _AlmostLockedSet first,
+    required _AlmostLockedSet second,
+    required int rccDigit,
+  }) {
+    final eliminations = <CandidateRef>{};
+    final commonZMask =
+        first.mask & second.mask & ~SudokuEngine.bitFor(rccDigit);
+    final alsCells = {...first.cells, ...second.cells};
+    for (final digit in SudokuEngine.digitsInMask(commonZMask)) {
+      final instances = {
+        ...first.instancesOf(digit, masks),
+        ...second.instancesOf(digit, masks),
+      };
+      final bit = SudokuEngine.bitFor(digit);
+      for (var index = 0; index < SudokuBoard.cellCount; index++) {
+        if (alsCells.contains(index) || (masks[index] & bit) == 0) continue;
+        if (instances.every((instance) => _arePeers(index, instance))) {
+          eliminations.add(CandidateRef(index, digit));
+        }
+      }
+    }
+    return _sortedCandidates(eliminations);
+  }
+
+  List<CandidateRef> _doublyLinkedAlsEliminations({
+    required List<int> masks,
+    required _AlmostLockedSet first,
+    required _AlmostLockedSet second,
+    required List<int> rccDigits,
+  }) {
+    final eliminations = <CandidateRef>{};
+    final allAlsCells = {...first.cells, ...second.cells};
+    var rccMask = 0;
+    for (final digit in rccDigits) {
+      rccMask |= SudokuEngine.bitFor(digit);
+      final instances = {
+        ...first.instancesOf(digit, masks),
+        ...second.instancesOf(digit, masks),
+      };
+      final bit = SudokuEngine.bitFor(digit);
+      for (var index = 0; index < SudokuBoard.cellCount; index++) {
+        if (allAlsCells.contains(index) || (masks[index] & bit) == 0) continue;
+        if (instances.every((instance) => _arePeers(index, instance))) {
+          eliminations.add(CandidateRef(index, digit));
+        }
+      }
+    }
+
+    for (final als in [first, second]) {
+      final nonRccMask = als.mask & ~rccMask;
+      for (final digit in SudokuEngine.digitsInMask(nonRccMask)) {
+        final instances = als.instancesOf(digit, masks);
+        final bit = SudokuEngine.bitFor(digit);
+        for (var index = 0; index < SudokuBoard.cellCount; index++) {
+          if (als.cells.contains(index) || (masks[index] & bit) == 0) continue;
+          if (instances.every((instance) => _arePeers(index, instance))) {
+            eliminations.add(CandidateRef(index, digit));
+          }
+        }
+      }
+    }
+    return _sortedCandidates(eliminations);
+  }
+
+  LogicalStep _alsXZStep({
+    required List<int> masks,
+    required _AlmostLockedSet first,
+    required _AlmostLockedSet second,
+    required List<int> rccDigits,
+    required List<CandidateRef> eliminations,
+    required bool doublyLinked,
+  }) {
+    final firstCandidates = [
+      for (final cell in first.cells)
+        for (final digit in SudokuEngine.digitsInMask(masks[cell]))
+          CandidateRef(cell, digit),
+    ];
+    final secondCandidates = [
+      for (final cell in second.cells)
+        for (final digit in SudokuEngine.digitsInMask(masks[cell]))
+          CandidateRef(cell, digit),
+    ];
+    final firstLabel = first.cells.map(_cellCoordinate).join('、');
+    final secondLabel = second.cells.map(_cellCoordinate).join('、');
+    final firstDigits = SudokuEngine.digitsInMask(first.mask).join('');
+    final secondDigits = SudokuEngine.digitsInMask(second.mask).join('');
+    final rccLabel = rccDigits.join('、');
+    return LogicalStep(
+      technique: doublyLinked
+          ? LogicalTechnique.doublyLinkedAlsXZ
+          : LogicalTechnique.alsXZ,
+      pattern: {...firstCandidates, ...secondCandidates}.toList(),
+      eliminations: eliminations,
+      chainCells: [...first.cells, ...second.cells],
+      candidateColors: {
+        for (final candidate in firstCandidates) candidate: 0,
+        for (final candidate in secondCandidates) candidate: 1,
+      },
+      focus:
+          '对比 ALS A（$firstLabel，候选 {$firstDigits}）与 ALS B（$secondLabel，候选 {$secondDigits}）。',
+      explanation: doublyLinked
+          ? '两个 ALS 都是 N 格 N+1 个候选，并由两个受限共同候选 $rccLabel 双重连接。两个 RCC 必须分别锁定在两个 ALS 中，因此 RCC 和其他已锁定候选都能产生高亮删数。'
+          : '两个 ALS 都是 N 格 N+1 个候选，受限共同候选 X=$rccLabel 不能同时出现在两组中。因此至少一个 ALS 会锁定，两组共有的其他 Z 候选至少有一处成立，同时看到它们所有可能位置的格可删除 Z。',
+    );
+  }
+
+  List<_AlmostLockedSet> _enumerateAls(
+    List<int> masks, {
+    required int maxCells,
+  }) {
+    final byKey = <String, _AlmostLockedSet>{};
+    for (final unit in _units) {
+      final cells = [
+        for (final index in unit.cells)
+          if (SudokuEngine.countBits(masks[index]) >= 2) index,
+      ];
+      final limit = cells.length < maxCells ? cells.length : maxCells;
+      for (var size = 1; size <= limit; size++) {
+        for (final selected in _combinations(cells, size)) {
+          var unionMask = 0;
+          for (final cell in selected) {
+            unionMask |= masks[cell];
+          }
+          if (SudokuEngine.countBits(unionMask) != size + 1) continue;
+          final als = _AlmostLockedSet(selected, unionMask);
+          byKey.putIfAbsent(als.key, () => als);
+        }
+      }
+    }
+    return byKey.values.toList();
+  }
+
+  static List<CandidateRef> _sortedCandidates(
+    Iterable<CandidateRef> candidates,
+  ) {
+    final sorted = candidates.toList()
+      ..sort((first, second) => _candidateId(first) - _candidateId(second));
+    return sorted;
+  }
+
   static int _candidateId(CandidateRef candidate) =>
       candidate.index * 9 + candidate.digit - 1;
 
@@ -2919,12 +3683,12 @@ class LogicalSolver {
     _ => '$count',
   };
 
-  static List<List<int>> _combinations(List<int> source, int size) {
-    final result = <List<int>>[];
+  static List<List<T>> _combinations<T>(List<T> source, int size) {
+    final result = <List<T>>[];
 
-    void choose(int start, List<int> selected) {
+    void choose(int start, List<T> selected) {
       if (selected.length == size) {
-        result.add(List<int>.of(selected));
+        result.add(List<T>.of(selected));
         return;
       }
       final remaining = size - selected.length;
@@ -2935,7 +3699,7 @@ class LogicalSolver {
       }
     }
 
-    choose(0, <int>[]);
+    choose(0, <T>[]);
     return result;
   }
 
@@ -3007,3 +3771,91 @@ class _AICState {
 }
 
 enum _LoopMode { xCycle, discontinuousNiceLoop, continuousNiceLoop }
+
+class _GroupedAICNode {
+  factory _GroupedAICNode(Iterable<CandidateRef> source) {
+    final candidates = source.toSet().toList()
+      ..sort(
+        (first, second) =>
+            (first.index * 9 + first.digit) - (second.index * 9 + second.digit),
+      );
+    final key = candidates
+        .map((candidate) => '${candidate.index}:${candidate.digit}')
+        .join(',');
+    return _GroupedAICNode._(List.unmodifiable(candidates), key);
+  }
+
+  const _GroupedAICNode._(this.candidates, this.key);
+
+  final List<CandidateRef> candidates;
+  final String key;
+
+  int get digit => candidates.first.digit;
+  bool get isGroup => candidates.length > 1;
+
+  bool overlaps(_GroupedAICNode other) =>
+      candidates.any(other.candidates.contains);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _GroupedAICNode && other.key == key;
+
+  @override
+  int get hashCode => key.hashCode;
+}
+
+class _GroupedAICEdge {
+  const _GroupedAICEdge({
+    required this.to,
+    required this.strength,
+    required this.reason,
+  });
+
+  final _GroupedAICNode to;
+  final LogicalLinkStrength strength;
+  final String reason;
+}
+
+class _GroupedAICUndirectedEdge {
+  const _GroupedAICUndirectedEdge({
+    required this.first,
+    required this.second,
+    required this.strength,
+    required this.reason,
+  });
+
+  final _GroupedAICNode first;
+  final _GroupedAICNode second;
+  final LogicalLinkStrength strength;
+  final String reason;
+}
+
+class _GroupedAICState {
+  const _GroupedAICState({
+    required this.nodes,
+    required this.links,
+    required this.nextStrength,
+  });
+
+  final List<_GroupedAICNode> nodes;
+  final List<LogicalGroupLink> links;
+  final LogicalLinkStrength nextStrength;
+}
+
+class _AlmostLockedSet {
+  _AlmostLockedSet(Iterable<int> source, this.mask)
+    : cells = (source.toList()..sort()),
+      key = (source.toList()..sort()).join(',');
+
+  final List<int> cells;
+  final int mask;
+  final String key;
+
+  List<int> instancesOf(int digit, List<int> masks) {
+    final bit = SudokuEngine.bitFor(digit);
+    return [
+      for (final cell in cells)
+        if ((masks[cell] & bit) != 0) cell,
+    ];
+  }
+}

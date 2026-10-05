@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 
 import '../controller/game_controller.dart';
 import '../logic/logical_solver.dart';
-import '../logic/practice_puzzles.dart';
 import '../logic/puzzle_generator.dart';
 import '../model/sudoku_board.dart';
 import '../persistence/saved_game_repository.dart';
+import '../settings/app_settings.dart';
 import 'game_screen.dart';
+import 'practice_screen.dart';
+import 'settings_screen.dart';
 import 'puzzle_entry_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -48,60 +50,72 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          '经典数独 · 9×9',
+          style: Theme.of(context).textTheme.labelLarge,
+        ),
+        actions: [
+          IconButton(
+            tooltip: '设置',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+            ),
+            icon: const Icon(Icons.tune),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: CustomScrollView(
-              slivers: [
-                SliverPadding(
-                  padding: const EdgeInsets.all(24),
-                  sliver: SliverFillRemaining(
-                    hasScrollBody: false,
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+              children: [
+                Text(
+                  '数独助手',
+                  style: Theme.of(context).textTheme.headlineLarge
+                      ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 2),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '替你清理基础步骤，把注意力留给链与结构',
+                  style: TextStyle(color: colors.onSurfaceVariant),
+                ),
+                const SizedBox(height: 24),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.surface,
+                    border: Border.all(color: colors.outlineVariant),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Spacer(),
-                        Align(
-                          child: Container(
-                            width: 88,
-                            height: 88,
-                            decoration: BoxDecoration(
-                              color: colors.primaryContainer,
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                            child: Icon(
-                              Icons.grid_4x4_rounded,
-                              size: 48,
-                              color: colors.onPrimaryContainer,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
                         Text(
-                          '数独助手',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.headlineLarge
-                              ?.copyWith(fontWeight: FontWeight.w700),
+                          '留一点时间，解一道题',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Text(
-                          '替你清理基础步骤，把注意力留给链与结构',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodyLarge
-                              ?.copyWith(color: colors.onSurfaceVariant),
+                          '六档难度 · 逐步提示 · 自由标记',
+                          style: TextStyle(color: colors.onSurfaceVariant),
                         ),
-                        const Spacer(),
+                        const SizedBox(height: 18),
                         if (_hasSavedGame) ...[
-                          FilledButton.tonalIcon(
+                          OutlinedButton.icon(
                             onPressed: () => _resumeSavedGame(context),
-                            icon: const Icon(Icons.play_circle_outline),
+                            icon: const Icon(Icons.play_arrow_outlined),
                             label: const Text('继续上次解题'),
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size.fromHeight(52),
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(48),
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 10),
                         ],
                         FilledButton.icon(
                           onPressed: _generating
@@ -114,70 +128,71 @@ class _HomeScreenState extends State<HomeScreen> {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : const Icon(Icons.auto_awesome),
+                              : const Icon(Icons.add),
                           label: Text(_generating ? '正在出题…' : '自动生成新题'),
                           style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(54),
+                            minimumSize: const Size.fromHeight(50),
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        FilledButton.tonalIcon(
-                          onPressed: () => _choosePractice(context),
-                          icon: const Icon(Icons.school_outlined),
-                          label: const Text('技巧练习'),
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(52),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        OutlinedButton.icon(
-                          onPressed: () =>
-                              _openEntry(context, startWithCamera: !kIsWeb),
-                          icon: const Icon(Icons.camera_alt_outlined),
-                          label: Text(kIsWeb ? '导入照片辅助录入' : '拍照导入并校对'),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(52),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        OutlinedButton.icon(
-                          onPressed: () => _openEntry(context),
-                          icon: const Icon(Icons.dialpad_outlined),
-                          label: const Text('手动录入题目'),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(52),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton.icon(
-                          onPressed: () => _openSample(context),
-                          icon: const Icon(Icons.science_outlined),
-                          label: const Text('打开示例盘面'),
-                        ),
-                        if (kIsWeb)
-                          TextButton.icon(
-                            onPressed: () => _showInstallHelp(context),
-                            icon: const Icon(Icons.install_desktop_outlined),
-                            label: const Text('安装到手机或电脑'),
-                          ),
-                        const SizedBox(height: 14),
-                        Card(
-                          elevation: 0,
-                          color: colors.surfaceContainerHighest.withValues(
-                            alpha: 0.55,
-                          ),
-                          child: const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Text(
-                              '支持全标候选、保留手动排除、一键清扫唯余与行列宫摈除；网页版会在本机保存最近的解题进度。',
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
                       ],
                     ),
                   ),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () => _choosePractice(context),
+                  icon: const Icon(Icons.school_outlined),
+                  label: const Text('技巧练习'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(52),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '从基础候选到链与闭环，每次专注一个技巧',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: colors.onSurfaceVariant),
+                ),
+                const SizedBox(height: 22),
+                Text('录入自己的题目', style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => _openEntry(context),
+                  icon: const Icon(Icons.dialpad_outlined),
+                  label: const Text('手动录入题目'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () =>
+                      _openEntry(context, startWithCamera: !kIsWeb),
+                  icon: const Icon(Icons.camera_alt_outlined),
+                  label: Text(kIsWeb ? '导入照片辅助录入' : '拍照导入并校对'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextButton.icon(
+                  onPressed: () => _openSample(context),
+                  icon: const Icon(Icons.science_outlined),
+                  label: const Text('打开示例盘面'),
+                ),
+                if (kIsWeb)
+                  TextButton.icon(
+                    onPressed: () => _showInstallHelp(context),
+                    icon: const Icon(Icons.install_desktop_outlined),
+                    label: const Text('安装到手机或电脑'),
+                  ),
+                const SizedBox(height: 8),
+                Text(
+                  kIsWeb ? '题目进度与设置保存在当前浏览器' : '候选、清扫和提示，按你的节奏使用',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelSmall
+                      ?.copyWith(color: colors.onSurfaceVariant),
                 ),
               ],
             ),
@@ -219,6 +234,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final controller = GameController.fromPuzzle(
       SudokuBoard.parse(HomeScreen.samplePuzzle),
     );
+    if (AppSettingsScope.preferencesOf(context).autoCandidates) {
+      controller.showAllCandidates();
+    }
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => GameScreen(controller: controller),
@@ -228,67 +246,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _choosePractice(BuildContext context) async {
-    final practice = await showModalBottomSheet<PracticePuzzle>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '技巧练习',
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '自动完成前置步骤，让目标技巧成为下一步',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                for (final item in practicePuzzles)
-                  ListTile(
-                    leading: const CircleAvatar(
-                      child: Icon(Icons.route_outlined),
-                    ),
-                    title: Text(item.technique.label),
-                    subtitle: Text(item.summary),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.pop(context, item),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    if (practice == null || !context.mounted) return;
-
-    try {
-      final controller = GameController.practice(
-        SudokuBoard.parse(practice.puzzle),
-        practice.technique,
-      );
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => GameScreen(
-            controller: controller,
-            title: '技巧练习 · ${practice.technique.label}',
-            saveProgress: false,
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('练习题加载失败：$error')));
-    }
+    await Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => const PracticeScreen()));
+    if (mounted) setState(_refreshSavedGame);
   }
 
   Future<void> _chooseDifficulty(BuildContext context) async {
@@ -313,6 +273,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (replace != true || !context.mounted) return;
     }
 
+    final preferred = AppSettingsScope.preferencesOf(context).defaultDifficulty;
     final difficulty = await showModalBottomSheet<PuzzleDifficulty>(
       context: context,
       showDragHandle: true,
@@ -331,10 +292,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 8),
                 for (final item in PuzzleDifficulty.values)
                   ListTile(
-                    leading: CircleAvatar(child: Text('${item.index + 1}')),
+                    leading: Icon(
+                      item == preferred
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                    ),
                     title: Text(item.label),
                     subtitle: Text(item.description),
-                    trailing: const Icon(Icons.chevron_right),
+                    trailing: item == preferred
+                        ? const Text('偏好')
+                        : const Icon(Icons.chevron_right),
                     onTap: () => Navigator.pop(context, item),
                   ),
               ],
@@ -362,6 +329,9 @@ class _HomeScreenState extends State<HomeScreen> {
         SudokuBoard.parse(payload['puzzle']! as String),
         difficulty: actualDifficulty,
       );
+      if (AppSettingsScope.preferencesOf(context).autoCandidates) {
+        controller.showAllCandidates();
+      }
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => GameScreen(controller: controller),

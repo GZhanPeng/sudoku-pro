@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../controller/game_controller.dart';
 import '../logic/logical_solver.dart';
 import '../logic/sudoku_engine.dart';
+import '../settings/app_settings.dart';
 
 class SudokuGrid extends StatelessWidget {
   const SudokuGrid({super.key, required this.controller});
@@ -37,6 +38,7 @@ class SudokuGrid extends StatelessWidget {
                   links: controller.hintLinks,
                   groupLinks: controller.hintGroupLinks,
                   chainNodes: controller.hintChainNodes,
+                  chainGroups: controller.hintChainGroups,
                   isLoop: controller.hintIsLoop,
                   strongColor: colors.primary,
                   weakColor: colors.secondary,
@@ -59,6 +61,7 @@ class _ChainPainter extends CustomPainter {
     required this.links,
     required this.groupLinks,
     required this.chainNodes,
+    required this.chainGroups,
     required this.isLoop,
     required this.strongColor,
     required this.weakColor,
@@ -72,6 +75,7 @@ class _ChainPainter extends CustomPainter {
   final List<LogicalLink> links;
   final List<LogicalGroupLink> groupLinks;
   final List<CandidateRef> chainNodes;
+  final List<List<CandidateRef>> chainGroups;
   final bool isLoop;
   final Color strongColor;
   final Color weakColor;
@@ -214,6 +218,58 @@ class _ChainPainter extends CustomPainter {
         center - Offset(textPainter.width / 2, textPainter.height / 2),
       );
     }
+
+    for (var index = 0; index < chainGroups.length; index++) {
+      final group = chainGroups[index];
+      final isStart = index == 0;
+      final isEnd = !isLoop && index == chainGroups.length - 1;
+      final fillColor = isStart
+          ? strongColor
+          : isEnd
+          ? endColor
+          : nodeSurfaceColor;
+      final foregroundColor = isStart
+          ? onStrongColor
+          : isEnd
+          ? onEndColor
+          : onNodeSurfaceColor;
+      final center = _groupCenter(group, cellWidth, cellHeight);
+      final badgeRadius = nodeRadius * (group.length > 1 ? 1.65 : 1.35);
+      canvas.drawCircle(
+        center,
+        badgeRadius,
+        Paint()
+          ..color = fillColor
+          ..style = PaintingStyle.fill,
+      );
+      if (!isStart && !isEnd) {
+        canvas.drawCircle(
+          center,
+          badgeRadius,
+          Paint()
+            ..color = strongColor
+            ..strokeWidth = 1.2
+            ..style = PaintingStyle.stroke,
+        );
+      }
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: '${index + 1}',
+          style: TextStyle(
+            color: foregroundColor,
+            fontSize: badgeRadius * (index >= 9 ? 0.8 : 1.0),
+            fontWeight: FontWeight.w800,
+            height: 1,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.center,
+      )..layout();
+      textPainter.paint(
+        canvas,
+        center - Offset(textPainter.width / 2, textPainter.height / 2),
+      );
+    }
   }
 
   Offset _candidateCenter(
@@ -272,6 +328,7 @@ class _ChainPainter extends CustomPainter {
       oldDelegate.links != links ||
       oldDelegate.groupLinks != groupLinks ||
       oldDelegate.chainNodes != chainNodes ||
+      oldDelegate.chainGroups != chainGroups ||
       oldDelegate.isLoop != isLoop ||
       oldDelegate.strongColor != strongColor ||
       oldDelegate.weakColor != weakColor ||
@@ -291,6 +348,7 @@ class _SudokuCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final preferences = AppSettingsScope.preferencesOf(context);
     final row = index ~/ 9;
     final column = index % 9;
     final selected = controller.selectedIndex == index;
@@ -298,10 +356,26 @@ class _SudokuCell extends StatelessWidget {
     final peer = controller.isPeerOfSelected(index);
     final value = controller.valueAt(index);
     final conflicting = controller.isConflictingCell(index);
+    final candidateMask = controller.visibleCandidateMaskAt(index);
+    final focusDigit = controller.highlightedDigit;
+    final focusMask =
+        preferences.highlightSameDigit &&
+            preferences.candidateHighlightMode != CandidateHighlightMode.off &&
+            focusDigit != null
+        ? SudokuEngine.bitFor(focusDigit)
+        : 0;
+    final sameCandidate = (candidateMask & focusMask) != 0;
 
     Color background = colors.surface;
-    if (peer) background = colors.primaryContainer.withValues(alpha: 0.28);
-    if (sameValue) background = colors.secondaryContainer;
+    if (peer && preferences.highlightPeers) {
+      background = colors.onSurface.withValues(alpha: 0.045);
+    }
+    if ((sameValue && preferences.highlightSameDigit) ||
+        (sameCandidate &&
+            preferences.candidateHighlightMode ==
+                CandidateHighlightMode.digitAndCell)) {
+      background = colors.secondaryContainer;
+    }
     if (controller.isHintPatternCell(index)) {
       background = colors.tertiaryContainer;
     }
@@ -331,7 +405,13 @@ class _SudokuCell extends StatelessWidget {
           ),
           child: value == 0
               ? _CandidateMarks(
-                  mask: controller.visibleCandidateMaskAt(index),
+                  mask: candidateMask,
+                  focusMask: focusMask,
+                  conflictingMask: preferences.warnCandidateConflicts
+                      ? controller.manualCandidateMasks[index] &
+                            ~controller.legalMaskAt(index)
+                      : 0,
+                  fontSize: preferences.candidateSize.fontSize,
                   color: colors.onSurfaceVariant,
                   patternMask: controller.hintPatternMaskAt(index),
                   eliminationMask: controller.hintEliminationMaskAt(index),
@@ -366,6 +446,9 @@ class _SudokuCell extends StatelessWidget {
 class _CandidateMarks extends StatelessWidget {
   const _CandidateMarks({
     required this.mask,
+    required this.focusMask,
+    required this.conflictingMask,
+    required this.fontSize,
     required this.color,
     required this.patternMask,
     required this.eliminationMask,
@@ -374,6 +457,9 @@ class _CandidateMarks extends StatelessWidget {
   });
 
   final int mask;
+  final int focusMask;
+  final int conflictingMask;
+  final double fontSize;
   final Color color;
   final int patternMask;
   final int eliminationMask;
@@ -401,6 +487,12 @@ class _CandidateMarks extends StatelessWidget {
                           final digit = candidateRow * 3 + candidateColumn + 1;
                           final visible =
                               (mask & SudokuEngine.bitFor(digit)) != 0;
+                          final focused =
+                              visible &&
+                              (focusMask & SudokuEngine.bitFor(digit)) != 0;
+                          final conflicting =
+                              (conflictingMask & SudokuEngine.bitFor(digit)) !=
+                              0;
                           final highlighted =
                               (patternMask & SudokuEngine.bitFor(digit)) != 0;
                           final eliminated =
@@ -420,33 +512,46 @@ class _CandidateMarks extends StatelessWidget {
                                     ? const Color(0xFFEF6C00)
                                     : const Color(0xFFFFB74D)
                               : null;
+                          final colors = Theme.of(context).colorScheme;
                           return Container(
-                            padding: candidateColor == null
+                            padding: candidateColor == null && !focused
                                 ? EdgeInsets.zero
                                 : const EdgeInsets.all(1.2),
-                            decoration: candidateColor == null
+                            decoration: candidateColor == null && !focused
                                 ? null
                                 : BoxDecoration(
-                                    color: candidateColor.withValues(
-                                      alpha: 0.16,
-                                    ),
+                                    color: candidateColor != null
+                                        ? candidateColor.withValues(alpha: 0.16)
+                                        : colors.secondaryContainer,
+                                    border: focused
+                                        ? Border.all(
+                                            color:
+                                                candidateColor ??
+                                                colors.secondary,
+                                            width: 0.8,
+                                          )
+                                        : null,
                                     shape: BoxShape.circle,
                                   ),
                             child: Text(
                               visible ? '$digit' : '',
                               style: TextStyle(
-                                color: eliminated
+                                color: conflicting || eliminated
                                     ? Theme.of(context).colorScheme.error
                                     : candidateColor ??
                                           (highlighted
                                               ? Theme.of(context)
                                                     .colorScheme
                                                     .tertiary
+                                              : focused
+                                              ? colors.onSecondaryContainer
                                               : color),
-                                fontSize: 8.5,
+                                fontSize: fontSize,
                                 height: 1,
                                 fontWeight:
-                                    highlighted ||
+                                    focused ||
+                                        highlighted ||
+                                        conflicting ||
                                         eliminated ||
                                         candidateColor != null
                                     ? FontWeight.w800

@@ -27,7 +27,6 @@ void main() {
           candidateSize: CandidateSize.large,
           highlightPeers: false,
           highlightSameDigit: false,
-          candidateHighlightMode: CandidateHighlightMode.digitAndCell,
           warnCandidateConflicts: false,
           showTimer: false,
           autoCandidates: true,
@@ -57,10 +56,26 @@ void main() {
     });
     expect(partial.themeMode, ThemeMode.system);
     expect(partial.candidateSize, CandidateSize.standard);
-    expect(partial.candidateHighlightMode, CandidateHighlightMode.digitOnly);
     expect(partial.highlightPeers, isTrue);
     expect(partial.showTimer, isFalse);
   });
+
+  test(
+    'removed candidate highlight setting does not reset other preferences',
+    () {
+      final restored = AppPreferences.fromJson({
+        'version': 1,
+        'themeMode': 'dark',
+        'candidateHighlightMode': 'digitAndCell',
+        'highlightSameDigit': false,
+        'candidateSize': 'large',
+      });
+      expect(restored.themeMode, ThemeMode.dark);
+      expect(restored.candidateSize, CandidateSize.large);
+      expect(restored.highlightSameDigit, isFalse);
+      expect(restored.toJson().containsKey('candidateHighlightMode'), isFalse);
+    },
+  );
 
   for (final version in [2, 3]) {
     test('version $version repository preserves manual candidate marks', () {

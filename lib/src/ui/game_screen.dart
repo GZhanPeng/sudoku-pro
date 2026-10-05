@@ -341,38 +341,46 @@ class _CompactGameLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(10, 4, 10, 24),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 660),
-          child: Column(
-            children: [
-              if (practiceSummary != null) ...[
-                _PracticeGuide(
-                  controller: controller,
-                  summary: practiceSummary!,
-                ),
-                const SizedBox(height: 12),
-              ],
-              _StatusBar(controller: controller),
-              const SizedBox(height: 8),
-              AspectRatio(
-                aspectRatio: 1,
-                child: _PausableBoard(controller: controller),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final contentWidth = (constraints.maxWidth - 20).clamp(0.0, 660.0);
+        // Keep the whole board visible before the scrollable controls, including
+        // in a narrow desktop browser. The panel lays out its actual status and
+        // legend heights before fitting the square board into the remaining area.
+        final panelHeight = (contentWidth + 120)
+            .clamp(0.0, (constraints.maxHeight - 4).clamp(0.0, double.infinity))
+            .toDouble();
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(10, 4, 10, 24),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 660),
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: panelHeight,
+                    child: _BoardPanel(controller: controller),
+                  ),
+                  if (practiceSummary != null) ...[
+                    const SizedBox(height: 12),
+                    _PracticeGuide(
+                      controller: controller,
+                      summary: practiceSummary!,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (controller.hasHint) ...[
+                    const SizedBox(height: 12),
+                    _HintPanel(controller: controller),
+                  ],
+                  const SizedBox(height: 12),
+                  _ControlPanel(controller: controller, actionColumns: 3),
+                ],
               ),
-              const SizedBox(height: 8),
-              const _ValueLegend(),
-              if (controller.hasHint) ...[
-                const SizedBox(height: 12),
-                _HintPanel(controller: controller),
-              ],
-              const SizedBox(height: 12),
-              _ControlPanel(controller: controller, actionColumns: 3),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -393,29 +401,7 @@ class _WideGameLayout extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  primary: false,
-                  child: Column(
-                    children: [
-                      _StatusBar(controller: controller),
-                      const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.topCenter,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 680),
-                          child: AspectRatio(
-                            aspectRatio: 1,
-                            child: _PausableBoard(controller: controller),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      const _ValueLegend(),
-                    ],
-                  ),
-                ),
-              ),
+              Expanded(child: _BoardPanel(controller: controller)),
               const SizedBox(width: 24),
               SizedBox(
                 width: 360,
@@ -445,6 +431,38 @@ class _WideGameLayout extends StatelessWidget {
       ),
     );
   }
+}
+
+class _BoardPanel extends StatelessWidget {
+  const _BoardPanel({required this.controller});
+
+  final GameController controller;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      _StatusBar(controller: controller),
+      const SizedBox(height: 12),
+      Expanded(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final side = constraints.biggest.shortestSide
+                .clamp(0.0, 680.0)
+                .toDouble();
+            return Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox.square(
+                dimension: side,
+                child: _PausableBoard(controller: controller),
+              ),
+            );
+          },
+        ),
+      ),
+      const SizedBox(height: 10),
+      const _ValueLegend(),
+    ],
+  );
 }
 
 class _PracticeGuide extends StatelessWidget {

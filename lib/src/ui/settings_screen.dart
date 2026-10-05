@@ -104,32 +104,6 @@ class SettingsScreen extends StatelessWidget {
                       preferences.copyWith(highlightSameDigit: value),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    child: DropdownButtonFormField<CandidateHighlightMode>(
-                      key: ValueKey(preferences.candidateHighlightMode),
-                      initialValue: preferences.candidateHighlightMode,
-                      decoration: const InputDecoration(labelText: '同数候选高亮方式'),
-                      items: [
-                        for (final mode in CandidateHighlightMode.values)
-                          DropdownMenuItem(
-                            value: mode,
-                            child: Text(mode.label),
-                          ),
-                      ],
-                      onChanged: preferences.highlightSameDigit
-                          ? (mode) {
-                              if (mode != null) {
-                                controller.update(
-                                  preferences.copyWith(
-                                    candidateHighlightMode: mode,
-                                  ),
-                                );
-                              }
-                            }
-                          : null,
-                    ),
-                  ),
                   SwitchListTile(
                     title: const Text('候选冲突提醒'),
                     subtitle: const Text('与行、列、宫中已填数字重复的候选标红'),

@@ -8,15 +8,63 @@ import 'package:sudoku_helper/src/model/sudoku_board.dart';
 import 'package:sudoku_helper/src/persistence/practice_progress_repository.dart';
 import 'package:sudoku_helper/src/settings/app_settings.dart';
 import 'package:sudoku_helper/src/ui/game_screen.dart';
+import 'package:sudoku_helper/src/ui/home_screen.dart';
 import 'package:sudoku_helper/src/ui/practice_screen.dart';
 import 'package:sudoku_helper/src/ui/settings_screen.dart';
 import 'package:sudoku_helper/src/ui/sudoku_grid.dart';
 
 void main() {
+  testWidgets(
+    'whole board stays visible when browser width and height change',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final game = GameController.fromPuzzle(
+        SudokuBoard.parse(HomeScreen.samplePuzzle),
+      );
+      game.showAllCandidates();
+      await tester.pumpWidget(
+        MaterialApp(home: GameScreen(controller: game, saveProgress: false)),
+      );
+      final boardSizes = <Size>[];
+      for (final viewport in const [
+        Size(1280, 720),
+        Size(1280, 540),
+        Size(1024, 600),
+        Size(1440, 900),
+        Size(800, 600),
+        Size(640, 480),
+        Size(390, 844),
+      ]) {
+        tester.view.physicalSize = viewport;
+        await tester.pumpAndSettle();
+        final board = tester.getRect(find.byType(SudokuGrid));
+        expect(board.width, closeTo(board.height, 0.01));
+        expect(board.left, greaterThanOrEqualTo(0));
+        expect(board.right, lessThanOrEqualTo(viewport.width));
+        expect(board.top, greaterThanOrEqualTo(kToolbarHeight));
+        expect(board.bottom, lessThanOrEqualTo(viewport.height));
+        final lastCell = find.byWidgetPredicate(
+          (widget) =>
+              widget is Semantics && widget.properties.label == '第 9 行第 9 列9',
+        );
+        expect(lastCell.hitTestable(), findsOneWidget);
+        await tester.tap(lastCell);
+        await tester.pump();
+        expect(game.selectedIndex, 80);
+        expect(tester.takeException(), isNull, reason: '$viewport');
+        boardSizes.add(board.size);
+      }
+      expect(boardSizes[1].height, lessThan(boardSizes[0].height));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
   testWidgets('desktop hint panel scrolls without moving the board', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.physicalSize = const Size(1280, 720);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -41,6 +89,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     final boardBefore = tester.getRect(find.byType(SudokuGrid));
+    expect(boardBefore.bottom, lessThanOrEqualTo(720));
     await tester.ensureVisible(find.text('执行这一步'));
     await tester.pumpAndSettle();
     expect(find.text('执行这一步').hitTestable(), findsOneWidget);
@@ -82,17 +131,7 @@ void main() {
     );
     await tester.tap(find.text('较大'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('同数候选高亮方式'), 180);
-    await tester.tap(
-      find.byType(DropdownButtonFormField<CandidateHighlightMode>),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('候选数字与格子').last);
-    await tester.pumpAndSettle();
-    expect(
-      settings.value.candidateHighlightMode,
-      CandidateHighlightMode.digitAndCell,
-    );
+    expect(find.text('同数候选高亮方式'), findsNothing);
     await tester.scrollUntilVisible(find.text('候选冲突提醒'), 180);
     await tester.tap(find.widgetWithText(SwitchListTile, '候选冲突提醒'));
     await tester.pumpAndSettle();

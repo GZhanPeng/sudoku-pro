@@ -46,7 +46,7 @@ void main() {
   for (final brightness in Brightness.values) {
     for (final automatic in [false, true]) {
       testWidgets(
-        'candidate focus modes preserve marks and conflicts ($brightness, automatic=$automatic)',
+        'candidate squares preserve marks and conflicts without tinting cells ($brightness, automatic=$automatic)',
         (tester) async {
           final game = GameController.fromPuzzle(
             SudokuBoard.parse(HomeScreen.samplePuzzle),
@@ -100,18 +100,12 @@ void main() {
           BoxDecoration cellDecoration(int index) =>
               tester
                       .widget<Container>(
-                        find.descendant(
-                          of: cell(index),
-                          matching: find.byWidgetPredicate(
-                            (widget) =>
-                                widget is Container &&
-                                widget.decoration is BoxDecoration &&
-                                (widget.decoration! as BoxDecoration).shape ==
-                                    BoxShape.rectangle &&
-                                (widget.decoration! as BoxDecoration).border
-                                    is Border,
-                          ),
-                        ),
+                        find
+                            .descendant(
+                              of: cell(index),
+                              matching: find.byType(Container),
+                            )
+                            .first,
                       )
                       .decoration!
                   as BoxDecoration;
@@ -131,46 +125,42 @@ void main() {
                       .decoration
                   as BoxDecoration?;
 
-          for (final mode in CandidateHighlightMode.values) {
-            settings.update(
-              settings.value.copyWith(candidateHighlightMode: mode),
-            );
-            await tester.pump();
-            expect(candidate(2, 5).style?.color, colors.error);
-            expect(candidate(2, 5).style?.decoration, isNull);
-            expect(
-              candidateDecoration(2, 5)?.border != null,
-              mode != CandidateHighlightMode.off,
-            );
-            expect(candidateDecoration(2, 1), isNull);
-            expect(
-              cellDecoration(2).color,
-              mode == CandidateHighlightMode.digitAndCell
-                  ? colors.secondaryContainer
-                  : colors.surface,
-            );
-            expect(cellDecoration(14).color, colors.secondaryContainer);
-            expect(game.manualCandidateMasks, notes);
-          }
+          expect(candidate(2, 5).style?.color, colors.error);
+          expect(candidate(2, 5).style?.decoration, isNull);
+          expect(candidateDecoration(2, 5)?.shape, BoxShape.rectangle);
+          expect(candidateDecoration(2, 5)?.border, isNull);
+          expect(candidateDecoration(2, 5)?.color, colors.secondaryContainer);
+          final highlight = tester.getSize(
+            find
+                .ancestor(
+                  of: find.descendant(of: cell(2), matching: find.text('5')),
+                  matching: find.byType(Container),
+                )
+                .first,
+          );
+          final cellSize = tester.getSize(cell(2));
+          expect(highlight.width, highlight.height);
+          expect(highlight.width, lessThan(cellSize.width / 3));
+          expect(candidateDecoration(2, 1), isNull);
+          expect(cellDecoration(2).color, colors.surface);
+          expect(cellDecoration(14).color, colors.secondaryContainer);
+          expect(game.manualCandidateMasks, notes);
           settings.update(settings.value.copyWith(highlightSameDigit: false));
           await tester.pump();
           expect(candidateDecoration(2, 5), isNull);
           expect(cellDecoration(2).color, colors.surface);
           expect(cellDecoration(14).color, colors.surface);
 
-          settings.update(
-            settings.value.copyWith(
-              highlightSameDigit: true,
-              candidateHighlightMode: CandidateHighlightMode.digitOnly,
-            ),
-          );
+          settings.update(settings.value.copyWith(highlightSameDigit: true));
           game.selectCell(2);
           game.enterDigit(2);
           if (automatic) game.enterDigit(2);
           await tester.pump();
           expect(candidate(2, 2).style?.color, colors.onSecondaryContainer);
           expect(candidate(2, 2).style?.fontWeight, FontWeight.w800);
-          expect(candidateDecoration(2, 2)?.border, isNotNull);
+          expect(candidateDecoration(2, 2)?.shape, BoxShape.rectangle);
+          expect(candidateDecoration(2, 2)?.color, colors.secondaryContainer);
+          expect(candidateDecoration(2, 2)?.border, isNull);
           expect(candidateDecoration(2, 5), isNull);
           game.selectCell(3);
           await tester.pump();
@@ -185,11 +175,6 @@ void main() {
             game.selectCell(index);
             game.enterDigit(5); // Exclude an automatic candidate.
             game.selectCell(0);
-            settings.update(
-              settings.value.copyWith(
-                candidateHighlightMode: CandidateHighlightMode.digitAndCell,
-              ),
-            );
             await tester.pump();
             expect(
               find.descendant(of: cell(index), matching: find.text('5')),

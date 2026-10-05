@@ -10,6 +10,9 @@ The embedded model metadata identifies the models as Ultralytics YOLOv8 models
 under AGPL-3.0. They are included here only for this private, personal-use
 application. Reassess or replace these models before distributing the app.
 
+The model assets are bundled only for native targets. Web/PWA builds do not
+include them and support photo reference entry rather than automatic OCR.
+
 Files:
 
 - `assets/models/sudoku_float16.tflite`

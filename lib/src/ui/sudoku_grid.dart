@@ -13,47 +13,92 @@ class SudokuGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.surface,
-        border: Border.all(color: colors.onSurface, width: 2.2),
-      ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          GridView.builder(
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 9,
+    return ColoredBox(
+      color: colors.surface,
+      child: CustomPaint(
+        foregroundPainter: _GridLinesPainter(
+          frameColor: Color.lerp(colors.outline, colors.onSurface, 0.35)!,
+          boxColor: colors.outline,
+          cellColor: Color.lerp(colors.outlineVariant, colors.outline, 0.2)!,
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            GridView.builder(
+              primary: false,
+              padding: EdgeInsets.zero,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 9,
+              ),
+              itemCount: 81,
+              itemBuilder: (context, index) =>
+                  _SudokuCell(index: index, controller: controller),
             ),
-            itemCount: 81,
-            itemBuilder: (context, index) =>
-                _SudokuCell(index: index, controller: controller),
-          ),
-          if (controller.hintLinks.isNotEmpty ||
-              controller.hintGroupLinks.isNotEmpty)
-            IgnorePointer(
-              child: CustomPaint(
-                painter: _ChainPainter(
-                  links: controller.hintLinks,
-                  groupLinks: controller.hintGroupLinks,
-                  chainNodes: controller.hintChainNodes,
-                  chainGroups: controller.hintChainGroups,
-                  isLoop: controller.hintIsLoop,
-                  strongColor: colors.primary,
-                  weakColor: colors.secondary,
-                  endColor: colors.tertiary,
-                  nodeSurfaceColor: colors.surface,
-                  onStrongColor: colors.onPrimary,
-                  onEndColor: colors.onTertiary,
-                  onNodeSurfaceColor: colors.onSurface,
+            if (controller.hintLinks.isNotEmpty ||
+                controller.hintGroupLinks.isNotEmpty)
+              IgnorePointer(
+                child: CustomPaint(
+                  painter: _ChainPainter(
+                    links: controller.hintLinks,
+                    groupLinks: controller.hintGroupLinks,
+                    chainNodes: controller.hintChainNodes,
+                    chainGroups: controller.hintChainGroups,
+                    isLoop: controller.hintIsLoop,
+                    strongColor: colors.primary,
+                    weakColor: colors.secondary,
+                    endColor: colors.tertiary,
+                    nodeSurfaceColor: colors.surface,
+                    onStrongColor: colors.onPrimary,
+                    onEndColor: colors.onTertiary,
+                    onNodeSurfaceColor: colors.onSurface,
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
+}
+
+/// Paint every rule above cell backgrounds so selection and hint fills cannot
+/// cover the frame or leave seams between independently painted cell borders.
+class _GridLinesPainter extends CustomPainter {
+  const _GridLinesPainter({
+    required this.frameColor,
+    required this.boxColor,
+    required this.cellColor,
+  });
+
+  final Color frameColor;
+  final Color boxColor;
+  final Color cellColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..style = PaintingStyle.stroke;
+    for (var line = 1; line < 9; line++) {
+      final isBoxBoundary = line % 3 == 0;
+      paint
+        ..color = isBoxBoundary ? boxColor : cellColor
+        ..strokeWidth = isBoxBoundary ? 1.4 : 0.7;
+      final x = size.width * line / 9;
+      final y = size.height * line / 9;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+    paint
+      ..color = frameColor
+      ..strokeWidth = 1.8;
+    canvas.drawRect((Offset.zero & size).deflate(0.9), paint);
+  }
+
+  @override
+  bool shouldRepaint(_GridLinesPainter oldDelegate) =>
+      oldDelegate.frameColor != frameColor ||
+      oldDelegate.boxColor != boxColor ||
+      oldDelegate.cellColor != cellColor;
 }
 
 class _ChainPainter extends CustomPainter {
@@ -358,22 +403,15 @@ class _SudokuCell extends StatelessWidget {
     final conflicting = controller.isConflictingCell(index);
     final candidateMask = controller.visibleCandidateMaskAt(index);
     final focusDigit = controller.highlightedDigit;
-    final focusMask =
-        preferences.highlightSameDigit &&
-            preferences.candidateHighlightMode != CandidateHighlightMode.off &&
-            focusDigit != null
+    final focusMask = preferences.highlightSameDigit && focusDigit != null
         ? SudokuEngine.bitFor(focusDigit)
         : 0;
-    final sameCandidate = (candidateMask & focusMask) != 0;
 
     Color background = colors.surface;
     if (peer && preferences.highlightPeers) {
       background = colors.onSurface.withValues(alpha: 0.045);
     }
-    if ((sameValue && preferences.highlightSameDigit) ||
-        (sameCandidate &&
-            preferences.candidateHighlightMode ==
-                CandidateHighlightMode.digitAndCell)) {
+    if (sameValue && preferences.highlightSameDigit) {
       background = colors.secondaryContainer;
     }
     if (controller.isHintPatternCell(index)) {
@@ -390,19 +428,7 @@ class _SudokuCell extends StatelessWidget {
       child: InkWell(
         onTap: () => controller.selectCell(index),
         child: Container(
-          decoration: BoxDecoration(
-            color: background,
-            border: Border(
-              right: BorderSide(
-                color: colors.outline,
-                width: column == 2 || column == 5 ? 2 : 0.45,
-              ),
-              bottom: BorderSide(
-                color: colors.outline,
-                width: row == 2 || row == 5 ? 2 : 0.45,
-              ),
-            ),
-          ),
+          decoration: BoxDecoration(color: background),
           child: value == 0
               ? _CandidateMarks(
                   mask: candidateMask,
@@ -514,6 +540,9 @@ class _CandidateMarks extends StatelessWidget {
                               : null;
                           final colors = Theme.of(context).colorScheme;
                           return Container(
+                            width: focused ? fontSize + 4 : null,
+                            height: focused ? fontSize + 4 : null,
+                            alignment: focused ? Alignment.center : null,
                             padding: candidateColor == null && !focused
                                 ? EdgeInsets.zero
                                 : const EdgeInsets.all(1.2),
@@ -523,15 +552,9 @@ class _CandidateMarks extends StatelessWidget {
                                     color: candidateColor != null
                                         ? candidateColor.withValues(alpha: 0.16)
                                         : colors.secondaryContainer,
-                                    border: focused
-                                        ? Border.all(
-                                            color:
-                                                candidateColor ??
-                                                colors.secondary,
-                                            width: 0.8,
-                                          )
-                                        : null,
-                                    shape: BoxShape.circle,
+                                    shape: focused
+                                        ? BoxShape.rectangle
+                                        : BoxShape.circle,
                                   ),
                             child: Text(
                               visible ? '$digit' : '',

@@ -14,22 +14,12 @@ enum CandidateSize {
   final double fontSize;
 }
 
-enum CandidateHighlightMode {
-  off('不高亮候选'),
-  digitOnly('仅候选数字'),
-  digitAndCell('候选数字与格子');
-
-  const CandidateHighlightMode(this.label);
-  final String label;
-}
-
 class AppPreferences {
   const AppPreferences({
     this.themeMode = ThemeMode.system,
     this.candidateSize = CandidateSize.standard,
     this.highlightPeers = true,
     this.highlightSameDigit = true,
-    this.candidateHighlightMode = CandidateHighlightMode.digitOnly,
     this.warnCandidateConflicts = true,
     this.showTimer = true,
     this.autoCandidates = false,
@@ -40,7 +30,6 @@ class AppPreferences {
   final CandidateSize candidateSize;
   final bool highlightPeers;
   final bool highlightSameDigit;
-  final CandidateHighlightMode candidateHighlightMode;
   final bool warnCandidateConflicts;
   final bool showTimer;
   final bool autoCandidates;
@@ -51,7 +40,6 @@ class AppPreferences {
     CandidateSize? candidateSize,
     bool? highlightPeers,
     bool? highlightSameDigit,
-    CandidateHighlightMode? candidateHighlightMode,
     bool? warnCandidateConflicts,
     bool? showTimer,
     bool? autoCandidates,
@@ -61,8 +49,6 @@ class AppPreferences {
     candidateSize: candidateSize ?? this.candidateSize,
     highlightPeers: highlightPeers ?? this.highlightPeers,
     highlightSameDigit: highlightSameDigit ?? this.highlightSameDigit,
-    candidateHighlightMode:
-        candidateHighlightMode ?? this.candidateHighlightMode,
     warnCandidateConflicts:
         warnCandidateConflicts ?? this.warnCandidateConflicts,
     showTimer: showTimer ?? this.showTimer,
@@ -76,7 +62,6 @@ class AppPreferences {
     'candidateSize': candidateSize.name,
     'highlightPeers': highlightPeers,
     'highlightSameDigit': highlightSameDigit,
-    'candidateHighlightMode': candidateHighlightMode.name,
     'warnCandidateConflicts': warnCandidateConflicts,
     'showTimer': showTimer,
     'autoCandidates': autoCandidates,
@@ -105,11 +90,6 @@ class AppPreferences {
       highlightSameDigit: flag(
         'highlightSameDigit',
         defaults.highlightSameDigit,
-      ),
-      candidateHighlightMode: enumValue(
-        CandidateHighlightMode.values,
-        json['candidateHighlightMode'],
-        defaults.candidateHighlightMode,
       ),
       warnCandidateConflicts: flag(
         'warnCandidateConflicts',
